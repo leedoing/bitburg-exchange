@@ -22,7 +22,7 @@
 
 | 액션 | 쓰는 곳 |
 | --- | --- |
-| `@datadog/action-catalog/dd/metrics` `queryScalarData`, `queryTimeseriesData` | 백엔드 커스텀 메트릭(`bitsburg.*`), `trace.express.request`, RUM 세션·액션·operation 집계 |
+| `@datadog/action-catalog/dd/metrics` `queryScalarData`, `queryTimeseriesData` | 백엔드 커스텀 메트릭(`bitsburg.*`), `trace.express.request`, RUM 세션·액션·operation 집계, 거래대금·입금액 로그 합계 |
 | `@datadog/action-catalog/dd/events` `listEvents` | 장애·캠페인 시작/종료 Event (`source:bitsburg-admin`) |
 | `@datadog/action-catalog/dd/monitor` `listMonitorsV2` | `team:bitsburg` 모니터 상태 |
 | `@datadog/action-catalog/dd/rum` `listRUMEvents` | 이탈 세션 (KYC 실패·입금 지연·CS 문의) 리플레이 링크 |
@@ -39,6 +39,8 @@ admin API 는 Datadog HTTP Connection `bitsburg-admin-api` (`src/server/config.t
 평시 기준 이탈 예상 = 가입 완료 × (1 − 평시 가입→첫 입금 전환율)
 평시 전환율 = 직전 24시간 같은 세션 전환율 (가입 20건 미만이면 스펙 80% × 65%)
 ```
+
+거래대금·입금액 합계(상황판, 경영 요약, 캠페인 탭)는 백엔드 로그 `Order filled`(`@order.amount_krw`), `Deposit completed`(`@deposit.amount_krw`)의 합이고, 1억 원 초과 값은 뺍니다(`krwSum`, `src/server/dd.ts`). 분포 메트릭은 값 범위로 거를 수 없고, RUM에는 traffic-gen의 API 직접 주문이 없어서 로그를 씁니다. 캠페인별 분리는 로그 속성 `campaign.id`로 합니다.
 
 `listing_spike` 는 실패 주문 수 × 평균 주문액으로 계산합니다. 평균 첫 입금액과 평균 주문액은 최근 24시간 RUM `deposit_completed`, `order_filled` 액션 금액의 평균(1억 원 초과 제외)입니다. 백엔드 분포 메트릭 평균은 오타 한 건에도 크게 흔들려서 쓰지 않습니다. 평균 첫 입금액은 PM 탭 슬라이더로 바꿀 수 있습니다.
 
