@@ -1,5 +1,9 @@
+import { openUrl } from '../shared/links';
 import type { FaultWindow, Series, Window } from '../shared/types';
 import { clock } from './format';
+
+/** Builds a RUM Explorer link for one series (or all series when label is null) over a time bucket. */
+export type ChartLink = (label: string | null, w: Window) => string | null;
 
 const PALETTE = ['#7c5cff', '#21b1ff', '#2ea043', '#f0883e', '#e5484d', '#c678dd', '#56b6c2', '#d19a66'];
 
@@ -12,11 +16,12 @@ type Props = {
     format?: (n: number) => string;
     threshold?: { value: number; label: string };
     empty?: string;
+    link?: ChartLink;
 };
 
 const defaultFormat = (n: number) => (Math.abs(n) < 10 ? String(Math.round(n * 10) / 10) : Math.round(n).toLocaleString('ko-KR'));
 
-export function Chart({ series, window, faults = [], kind = 'line', height = 180, format = defaultFormat, threshold, empty }: Props) {
+export function Chart({ series, window, faults = [], kind = 'line', height = 180, format = defaultFormat, threshold, empty, link }: Props) {
     const width = 720;
     const pad = { l: 52, r: 12, t: 12, b: 24 };
     const innerW = width - pad.l - pad.r;
@@ -42,9 +47,15 @@ export function Chart({ series, window, faults = [], kind = 'line', height = 180
 
     const nBars = series.length || 1;
     const step = series[0]?.points.length ? innerW / series[0].points.length : innerW;
+    const pts = series[0]?.points ?? [];
+    const bucket = pts.length > 1 ? pts[1][0] - pts[0][0] : span;
+    const bucketOf = (t: number): Window => ({ from: t, to: Math.min(window.to, t + bucket) });
+    const onlyLabel = series.length === 1 ? series[0].label : null;
+    const go = (label: string | null, w: Window) => openUrl(link?.(label, w));
+    const tip = (label: string | null, t: number) => `${label ?? '전체'} · ${clock(t)}~${clock(t + bucket)} · 클릭하면 RUM Explorer`;
 
     return (
-        <div className="chart">
+        <div className={`chart ${link ? 'chart-link' : ''}`}>
             <svg viewBox={`0 0 ${width} ${height}`} role="img" preserveAspectRatio="none">
                 {campaigns.map((c) => (
                     <rect key={`c${c.start}`} x={x(c.a)} y={pad.t} width={x(c.b) - x(c.a)} height={innerH} className="band-campaign" />
@@ -88,6 +99,21 @@ export function Chart({ series, window, faults = [], kind = 'line', height = 180
                             points={s.points.map(([t, v]) => `${x(t)},${y(v)}`).join(' ')}
                         />
                     ))}
+                {kind === 'line' &&
+                    link &&
+                    pts.map(([t]) => (
+                        <rect
+                            key={`hit${t}`}
+                            x={x(t)}
+                            y={pad.t}
+                            width={Math.max(1, x(t + bucket) - x(t))}
+                            height={innerH}
+                            className="hit"
+                            onClick={() => go(onlyLabel, bucketOf(t))}
+                        >
+                            <title>{tip(onlyLabel, t)}</title>
+                        </rect>
+                    ))}
                 {kind === 'bar' &&
                     series.map((s, i) =>
                         s.points.map(([t, v]) => (
@@ -98,18 +124,29 @@ export function Chart({ series, window, faults = [], kind = 'line', height = 180
                                 width={Math.max(1, step / nBars - 1)}
                                 height={Math.max(0, pad.t + innerH - y(v))}
                                 fill={PALETTE[i % PALETTE.length]}
-                            />
+                                className={link && v > 0 ? 'bar-link' : undefined}
+                                onClick={link && v > 0 ? () => go(s.label, bucketOf(t)) : undefined}
+                            >
+                                {link && v > 0 && <title>{`${tip(s.label, t)} (${format(v)})`}</title>}
+                            </rect>
                         )),
                     )}
             </svg>
             {!hasData && <div className="chart-empty">{empty ?? '이 구간에 데이터가 없습니다'}</div>}
             <div className="legend">
-                {series.map((s, i) => (
-                    <span key={s.label}>
-                        <i style={{ background: PALETTE[i % PALETTE.length] }} />
-                        {s.label}
-                    </span>
-                ))}
+                {series.map((s, i) =>
+                    link ? (
+                        <button key={s.label} type="button" className="legend-link" onClick={() => go(s.label, window)} title={`${s.label} · 이 구간 전체를 RUM Explorer에서 보기`}>
+                            <i style={{ background: PALETTE[i % PALETTE.length] }} />
+                            {s.label} ↗
+                        </button>
+                    ) : (
+                        <span key={s.label}>
+                            <i style={{ background: PALETTE[i % PALETTE.length] }} />
+                            {s.label}
+                        </span>
+                    ),
+                )}
                 {bands.length > 0 && (
                     <span>
                         <i className="legend-fault" />

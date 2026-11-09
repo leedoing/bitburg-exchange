@@ -127,6 +127,14 @@ export type ExecData = {
 // ------------------------------------------------------------------ BI
 export const BI_DIMS = ['none', 'version', 'platform', 'source', 'campaign'] as const;
 export type BiDim = (typeof BI_DIMS)[number];
+/** RUM attribute behind each comparison dimension (DDSQL column and RUM search field). */
+export const BI_DIM_FIELD: Record<BiDim, string | null> = {
+    none: null,
+    version: 'version',
+    platform: '@context.client.platform',
+    source: '@context.campaign.source',
+    campaign: '@context.campaign.id',
+};
 export const BI_DIM_LABEL: Record<BiDim, string> = {
     none: '전체',
     version: '앱 버전',

@@ -1,16 +1,26 @@
 import { useQuery } from '@tanstack/react-query';
 
 import { getExec } from '../pulse.backend';
+import { action, RUM, rumUrl } from '../shared/links';
 import type { RangeKey } from '../shared/types';
 import { CountUp } from '../ui/CountUp';
 import { count, dateTime, krw } from '../ui/format';
 import { Card, ErrorBox, LevelTag, Loading, Tile } from '../ui/parts';
+
+/** Fault → the RUM events that show its impact (DATA_SPEC fault table). */
+const FAULT_RUM: Record<string, string> = {
+    kyc_vendor_slow: `${RUM.kycFailed} version:3.5.0`,
+    deposit_delay: action('deposit_stuck', 'cs_contact_opened'),
+    listing_spike: RUM.orderFailed,
+};
 
 export function Exec({ range }: { range: RangeKey }) {
     const q = useQuery({ queryKey: ['exec', range], queryFn: () => getExec(range), refetchInterval: 30_000 });
     if (q.isLoading) return <Loading what="경영 요약" />;
     if (q.isError || !q.data) return <ErrorBox error={q.error} />;
     const d = q.data;
+    const now = d.range.window.to;
+    const day = { from: now - 24 * 3_600_000, to: now };
     return (
         <div className="stack">
             <Card className="headline-card">
@@ -18,10 +28,10 @@ export function Exec({ range }: { range: RangeKey }) {
                 <div className="headline">{d.headline}</div>
             </Card>
             <div className="tiles">
-                <Tile label="가입 (24시간)" value={d.today.signups} format={count} />
-                <Tile label="첫 입금 (24시간)" value={d.today.firstDeposits} format={count} sub={<>{krw(d.today.depositKrw)}</>} />
-                <Tile label="주문 체결 (24시간)" value={d.today.orders} format={count} />
-                <Tile label="거래대금 (24시간)" value={d.today.orderKrw} format={krw} />
+                <Tile label="가입 (24시간)" value={d.today.signups} format={count} href={rumUrl(RUM.signup, day)} />
+                <Tile label="첫 입금 (24시간)" value={d.today.firstDeposits} format={count} sub={<>{krw(d.today.depositKrw)}</>} href={rumUrl(RUM.deposit, day)} />
+                <Tile label="주문 체결 (24시간)" value={d.today.orders} format={count} href={rumUrl(RUM.orderFilled, day)} />
+                <Tile label="거래대금 (24시간)" value={d.today.orderKrw} format={krw} href={rumUrl(RUM.orderFilled, day)} />
             </div>
             <Card title="장애별 추정 영향 (최근 24시간)">
                 {d.cards.length === 0 ? (
@@ -29,9 +39,16 @@ export function Exec({ range }: { range: RangeKey }) {
                 ) : (
                     <div className="impact-grid">
                         {d.cards.map((c) => (
-                            <div key={`${c.fault}${c.start}`} className={`impact ${c.end === null ? 'impact-live' : ''}`}>
+                            <a
+                                key={`${c.fault}${c.start}`}
+                                className={`impact rum-link ${c.end === null ? 'impact-live' : ''}`}
+                                href={rumUrl(FAULT_RUM[c.fault] ?? '', { from: c.start, to: c.end ?? now })}
+                                target="_blank"
+                                rel="noreferrer"
+                                title="장애 구간의 RUM 이벤트 보기"
+                            >
                                 <div className="impact-head">
-                                    <strong>{c.label}</strong>
+                                    <strong>{c.label} ↗</strong>
                                     {c.end === null ? <LevelTag level="bad" /> : <span className="pill">종료</span>}
                                 </div>
                                 <div className="muted small">
@@ -58,7 +75,7 @@ export function Exec({ range }: { range: RangeKey }) {
                                     </div>
                                 </div>
                                 <div className="muted small">{c.note}</div>
-                            </div>
+                            </a>
                         ))}
                     </div>
                 )}

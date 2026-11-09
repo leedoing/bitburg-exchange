@@ -345,6 +345,43 @@ MCP 검증 (`ddsql_run_query`로 쿼리 원형 확인, `RUMApi.aggregateRUMEvent
 
 다음 날 확인할 것에 추가: 24시간치(세션 수천 개)가 쌓인 뒤 BI 탭 응답 시간과 DDSQL 결과가 잘리지 않는지(RUM 집계 세션 수와 BI 신규 방문+로그인 세션 수 대조).
 
+### 9단계 추가: 그래프 → RUM Explorer 드릴다운 (2026-11-09 22:00 KST)
+
+사용자 요청: 각 그래프를 클릭하면 RUM Sessions(RUM Explorer)로 가도록.
+
+- `src/shared/links.ts`의 `rumUrl(query, window)`가 `https://hyunjin.datadoghq.com/rum/sessions?query=…&from_ts=…&to_ts=…&live=false`를 만듭니다. 쿼리 앞에는 늘 `@application.id:<RUM 앱> env:demo-coinone @session.type:user`가 붙습니다.
+- 차트(`ui/Chart.tsx`의 `link` prop):
+  - 막대를 누르면 그 시리즈의 그 시간 버킷이 열립니다.
+  - 선 차트는 시간 구간 열을 누르면 그 버킷이 열립니다. 시리즈가 여러 개면 전체가 열립니다.
+  - 범례를 누르면 그 시리즈의 선택 구간 전체가 열립니다.
+- 탭별 연결:
+
+| 탭 | 클릭 대상 | RUM 쿼리 |
+| --- | --- | --- |
+| 상황판 | 신호등(최근 5분)·타일·단계별 막대 | signup_completed / kyc_approved·kyc_failed / deposit_* / order_* |
+| 운영·CS | 단계 행(최근 5분)·입금 타일·입금 대기 차트·CS 주제별 막대 | deposit_requested·deposit_stuck, `cs_contact_opened @context.cs.topic:<주제>` |
+| PM·DA | 퍼널 칸(단계 × 버전)·버전별 KYC 차트 | `<단계 action> version:<버전>` |
+| 캠페인 | 타일·유입/가입/주문/거래대금 막대·p95·실패율 | `@context.campaign.id:<캠페인>`, 평시 = 두 캠페인 제외 |
+| 경영 요약 | 24시간 타일·장애 영향 카드(장애 구간) | kyc_vendor_slow → `kyc_failed version:3.5.0`, deposit_delay → deposit_stuck·cs_contact_opened, listing_spike → order_failed |
+| BI·그로스 | 타일·퍼널 칸·소요 시간 칸·성과표·이탈 사유·등급·Sankey 노드/흐름 | 단계 action 또는 `@type:view @view.name:<화면>` + 비교 기준 필드(`(none)`은 `-필드:*`) |
+
+- 비교 기준 필드 매핑은 `BI_DIM_FIELD`(shared/types.ts)로 옮겨서 DDSQL과 링크가 같은 필드를 씁니다.
+- 퍼널 숫자는 같은 세션 코호트 기준입니다. 반면 링크는 해당 단계 이벤트 전체를 엽니다. RUM 검색으로는 "같은 세션에서 앞 단계 뒤" 조건을 걸 수 없기 때문입니다.
+- 게시 버전 `3d437f43f52dcbfa`.
+
+MCP 검증 (`aggregate_rum_events`, 최근 6시간, 링크와 같은 쿼리)
+
+| 쿼리 | 결과 |
+| --- | --- |
+| 단계 action 8종 | order_filled 1,119, signup_completed 247, kyc_approved 201, deposit_completed 135, kyc_failed 22, cs_contact_opened 5, order_failed 2, deposit_stuck 1 |
+| `cs_contact_opened @context.cs.topic:deposit` | 2 |
+| 평시 세션 `-@context.campaign.id:(listing_pups OR promo_deposit_bonus)` | 773 |
+| `kyc_failed version:3.5.0` by `@context.kyc.reason` | rejected 9, abandoned 2 |
+| `order_filled` by `@usr.tier` | regular 755, new 275, vip 89 |
+| 세션 by `@context.campaign.source` | organic 492, push 136, kakao_ad 116, naver_sa 74 |
+| URL 형식 | MCP가 돌려준 RUM Explorer URL과 같은 경로·파라미터 (`/rum/sessions`, `query`, `from_ts`, `to_ts`, `live=false`) |
+| 렌더 (Playwright) | 6개 탭 오류 없음. 클릭 시 열리는 URL이 시리즈·버킷과 일치 (예: CS 입금 막대 → topic:deposit, 07:30~07:35 UTC) |
+
 ## 최종 요약 (2026-11-09 21:05 KST)
 
 0~7단계와 9단계를 마쳤습니다. 8단계(데이터 점검)는 요청대로 하지 않았고 아래 "다음 날 확인할 것"에 넣었습니다.

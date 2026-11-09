@@ -2,14 +2,18 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 
 import { getPm } from '../pulse.backend';
+import { RUM, rumUrl, val } from '../shared/links';
 import type { RangeKey } from '../shared/types';
 import { Chart } from '../ui/Chart';
 import { CountUp } from '../ui/CountUp';
 import { count, dateTime, krw, pct, ratio } from '../ui/format';
-import { Card, ErrorBox, Loading } from '../ui/parts';
+import { Card, ErrorBox, Loading, MaybeLink } from '../ui/parts';
 
 /** Spec baseline (DATA_SPEC 8): signup→KYC 80% × KYC→first deposit 65%. */
 const SPEC_SIGNUP_TO_DEPOSIT = 0.8 * 0.65;
+
+/** Same order as the backend's PM funnel steps. */
+const STEP_RUM = [RUM.signup, RUM.kycApproved, RUM.deposit, RUM.orderFilled];
 
 const REASON: Record<string, string> = { kyc_failed: 'KYC 실패', deposit_stuck: '입금 지연', cs_contact_opened: 'CS 문의' };
 
@@ -28,6 +32,7 @@ export function Pm({ range }: { range: RangeKey }) {
     const expectedDrop = signups * (1 - baselineConv);
     const excess = Math.max(0, dropped - expectedDrop);
     const loss = excess * deposit;
+    const w = d.range.window;
 
     return (
         <div className="stack">
@@ -45,12 +50,15 @@ export function Pm({ range }: { range: RangeKey }) {
                         <tbody>
                             {d.steps.map((step, i) => (
                                 <tr key={step}>
-                                    <td>{step}</td>
+                                    <td>
+                                        <MaybeLink href={rumUrl(STEP_RUM[i], w)}>{step} ↗</MaybeLink>
+                                    </td>
                                     {d.funnel.map((f) => {
                                         const conv = i === 0 ? 1 : ratio(f.steps[i], f.steps[i - 1]);
                                         const width = Math.min(100, ratio(f.steps[i], Math.max(...d.funnel.map((x) => x.steps[0]), 1)) * 100);
                                         return (
                                             <td key={f.version}>
+                                                <MaybeLink href={rumUrl(`${STEP_RUM[i]} version:${val(f.version)}`, w)} className="cell-link" title={`${f.version} · ${step} 이벤트를 RUM Explorer에서 보기`}>
                                                 <div className="bar-cell">
                                                     <div className={`bar v${f.version.replace(/\./g, '')}`} style={{ width: `${width}%` }} />
                                                     <span>
@@ -58,6 +66,7 @@ export function Pm({ range }: { range: RangeKey }) {
                                                         {i > 0 && <em> · 전환 {pct(conv * 100, 0)}</em>}
                                                     </span>
                                                 </div>
+                                                </MaybeLink>
                                             </td>
                                         );
                                     })}
@@ -98,7 +107,13 @@ export function Pm({ range }: { range: RangeKey }) {
             </div>
             <div className="grid-2">
                 <Card title="버전별 KYC 성공률 (%)">
-                    <Chart series={d.kycByVersion} window={d.range.window} faults={d.windows} format={(n) => `${Math.round(n)}%`} />
+                    <Chart
+                        series={d.kycByVersion}
+                        window={w}
+                        faults={d.windows}
+                        format={(n) => `${Math.round(n)}%`}
+                        link={(label, bw) => rumUrl(label ? `${RUM.kycResult} version:${val(label)}` : RUM.kycResult, bw)}
+                    />
                 </Card>
                 <Card title="이탈 세션 리플레이">
                     {d.replays.length === 0 ? (

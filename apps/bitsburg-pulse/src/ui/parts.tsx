@@ -18,15 +18,50 @@ export function Card({ title, extra, children, className }: { title?: ReactNode;
     );
 }
 
-export function Tile({ label, value, format, sub, level }: { label: string; value: number; format: (n: number) => string; sub?: ReactNode; level?: Level }) {
-    return (
-        <div className={`tile ${level ? `lv-${level}` : ''}`}>
-            <div className="tile-label">{label}</div>
+export function Tile({
+    label,
+    value,
+    format,
+    sub,
+    level,
+    href,
+}: {
+    label: string;
+    value: number;
+    format: (n: number) => string;
+    sub?: ReactNode;
+    level?: Level;
+    href?: string | null;
+}) {
+    const body = (
+        <>
+            <div className="tile-label">
+                {label}
+                {href && <span className="tile-go"> ↗</span>}
+            </div>
             <div className="tile-value">
                 <CountUp value={value} format={format} />
             </div>
             {sub && <div className="tile-sub">{sub}</div>}
-        </div>
+        </>
+    );
+    const cls = `tile ${level ? `lv-${level}` : ''}`;
+    return href ? (
+        <a className={`${cls} tile-link`} href={href} target="_blank" rel="noreferrer" title="RUM Explorer에서 보기">
+            {body}
+        </a>
+    ) : (
+        <div className={cls}>{body}</div>
+    );
+}
+
+/** Wraps children in a new-tab link when href is set. */
+export function MaybeLink({ href, children, className, title }: { href?: string | null; children: ReactNode; className?: string; title?: string }) {
+    if (!href) return <>{children}</>;
+    return (
+        <a href={href} target="_blank" rel="noreferrer" className={`rum-link ${className ?? ''}`} title={title ?? 'RUM Explorer에서 보기'}>
+            {children}
+        </a>
     );
 }
 
@@ -39,11 +74,12 @@ export function LevelTag({ level }: { level: Level }) {
     );
 }
 
-export function TrafficLights({ stages }: { stages: StageSignal[] }) {
+export function TrafficLights({ stages, links }: { stages: StageSignal[]; links?: Record<string, string> }) {
     return (
         <div className="lights">
             {stages.map((s, i) => (
                 <div key={s.key} className="light-wrap">
+                    <MaybeLink href={links?.[s.key]} className="light-link" title={`${s.label} 최근 5분 RUM 이벤트 보기`}>
                     <div className={`light lv-${s.level}`}>
                         <div className="light-top">
                             <span className="light-step">{i + 1}단계</span>
@@ -58,6 +94,7 @@ export function TrafficLights({ stages }: { stages: StageSignal[] }) {
                         <div className="light-headline">{s.headline}</div>
                         <div className="light-detail">{s.detail}</div>
                     </div>
+                    </MaybeLink>
                     {i < stages.length - 1 && <div className="arrow" aria-hidden>›</div>}
                 </div>
             ))}

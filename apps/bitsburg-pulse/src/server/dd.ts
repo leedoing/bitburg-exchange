@@ -4,11 +4,10 @@ import { queryScalarData, queryTimeseriesData } from '@datadog/action-catalog/dd
 import { listMonitorsV2 } from '@datadog/action-catalog/dd/monitor';
 import { listRUMEvents } from '@datadog/action-catalog/dd/rum';
 
+import { DD_APP_URL, ENV, RUM_APP_ID } from '../shared/links';
 import type { FaultWindow, RangeKey, ResolvedRange, Series, TimelineEvent, Window } from '../shared/types';
-import { DD_APP_URL } from './config';
 
-export const ENV = 'demo-coinone';
-export const RUM_APP_ID = 'b6478d57-baa4-4ff1-b07c-f9fd12d514d8';
+export { ENV, RUM_APP_ID };
 export const APP_URL = DD_APP_URL;
 export const RUM_BASE = `@application.id:${RUM_APP_ID} env:${ENV}`;
 

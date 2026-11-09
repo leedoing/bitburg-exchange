@@ -2,19 +2,12 @@
 // Every value interpolated into SQL comes from a fixed whitelist or a number; never pass frontend strings through.
 import { tableQuery } from '@datadog/action-catalog/dd/ddsql';
 
-import type { BiDim, BiDirection, BiFunnelRow, BiLink, BiMode, BiView, StepTiming, Window } from '../shared/types';
+import { BI_DIM_FIELD, type BiDim, type BiDirection, type BiFunnelRow, type BiLink, type BiMode, type BiView, type StepTiming, type Window } from '../shared/types';
 import { ENV, RUM_APP_ID } from './dd';
 
 const FILTER = `@application.id:${RUM_APP_ID} env:${ENV} @session.type:user`;
 const MAX_KRW = 100_000_000;
 
-const DIM_FIELD: Record<BiDim, string | null> = {
-    none: null,
-    version: 'version',
-    platform: '@context.client.platform',
-    source: '@context.campaign.source',
-    campaign: '@context.campaign.id',
-};
 
 /** Funnel steps after the entry step, per mode. Entry is "new visit" (action) or the home view (view). */
 const STEPS: Record<BiMode, { entry: string; names: string[] }> = {
@@ -52,7 +45,7 @@ const numOrNull = (v: unknown): number | null => (v === null || v === undefined 
  * A session counts at step k only if it reached step k-1 first and step k happened at or after it.
  */
 function funnelSql(w: Window, mode: BiMode, dim: BiDim): string {
-    const dimField = DIM_FIELD[dim];
+    const dimField = BI_DIM_FIELD[dim];
     const names = STEPS[mode].names;
     const viewCols: Col[] = [
         ['@session.id', 'VARCHAR', 'sid'],

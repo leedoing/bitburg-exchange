@@ -1,3 +1,4 @@
+import { openUrl } from '../shared/links';
 import type { BiLink } from '../shared/types';
 import { count, pct } from './format';
 
@@ -16,8 +17,19 @@ const LABEL_W = 120;
 /**
  * Columns are relative steps (link.step → link.step + 1). Node height ∝ sessions through it.
  * `labels` renames view names for display (e.g. '(exit)' → '이탈').
+ * `viewLink` makes nodes and flows clickable; a flow opens the view it lands on (or leaves from, for exits).
  */
-export function Sankey({ links, labels, anchor }: { links: BiLink[]; labels: Record<string, string>; anchor: string }) {
+export function Sankey({
+    links,
+    labels,
+    anchor,
+    viewLink,
+}: {
+    links: BiLink[];
+    labels: Record<string, string>;
+    anchor: string;
+    viewLink?: (name: string) => string | null;
+}) {
     if (links.length === 0) return <div className="sankey-empty">이 구간에 경로 데이터가 없습니다</div>;
 
     const steps = [...new Set(links.flatMap((l) => [l.step, l.step + 1]))].sort((a, b) => a - b);
@@ -63,6 +75,7 @@ export function Sankey({ links, labels, anchor }: { links: BiLink[]; labels: Rec
     const names = [...new Set([...nodes.values()].map((n) => n.name).filter((n) => n !== EXIT))].sort();
     const color = (name: string) => (name === EXIT ? EXIT_COLOR : PALETTE[names.indexOf(name) % PALETTE.length]);
     const label = (name: string) => labels[name] ?? name;
+    const clickable = (name: string) => (viewLink && name !== EXIT ? () => openUrl(viewLink(name)) : undefined);
 
     const sorted = [...links].sort((a, b) => a.step - b.step || b.n - a.n);
     const paths = sorted.map((l) => {
@@ -85,8 +98,10 @@ export function Sankey({ links, labels, anchor }: { links: BiLink[]; labels: Rec
                 strokeOpacity={0.35}
                 strokeWidth={h}
                 fill="none"
+                className={viewLink ? 'sankey-click' : undefined}
+                onClick={clickable(l.to === EXIT ? l.from : l.to)}
             >
-                <title>{`${label(l.from)} → ${label(l.to)}: ${count(l.n)}세션 (${pct(share, 0)})`}</title>
+                <title>{`${label(l.from)} → ${label(l.to)}: ${count(l.n)}세션 (${pct(share, 0)})${viewLink ? ' · 클릭하면 RUM Explorer' : ''}`}</title>
             </path>
         );
     });
@@ -103,9 +118,9 @@ export function Sankey({ links, labels, anchor }: { links: BiLink[]; labels: Rec
             <svg viewBox={`-2 -2 ${W + 4} ${H + 4}`} role="img" aria-label="경로 분석">
                 {paths}
                 {[...nodes.values()].map((n) => (
-                    <g key={n.key}>
+                    <g key={n.key} className={clickable(n.name) ? 'sankey-click' : undefined} onClick={clickable(n.name)}>
                         <rect x={colX(n.col)} y={n.y} width={NODE_W} height={n.h} rx={3} fill={color(n.name)}>
-                            <title>{`${label(n.name)}: ${count(n.value)}세션`}</title>
+                            <title>{`${label(n.name)}: ${count(n.value)}세션${clickable(n.name) ? ' · 클릭하면 RUM Explorer' : ''}`}</title>
                         </rect>
                         {n.h >= 12 && (
                             <text x={colX(n.col) + NODE_W + 6} y={n.y + n.h / 2} dominantBaseline="middle" className="sankey-label">

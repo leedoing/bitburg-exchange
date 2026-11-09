@@ -4,6 +4,7 @@ import { useState } from 'react';
 
 import { getBiFunnel, getBiPaths } from '../bi.backend';
 import {
+    BI_DIM_FIELD,
     BI_DIM_LABEL,
     BI_DIMS,
     BI_VIEWS,
@@ -15,9 +16,11 @@ import {
     type BiView,
     type RangeKey,
     type StepTiming,
+    type Window,
 } from '../shared/types';
+import { action, RUM, rumUrl, val } from '../shared/links';
 import { count, krw, pct, ratio } from '../ui/format';
-import { Card, ErrorBox, Loading, Tile } from '../ui/parts';
+import { Card, ErrorBox, Loading, MaybeLink, Tile } from '../ui/parts';
 import { Sankey } from '../ui/Sankey';
 
 const STEP_LABEL: Record<BiMode, string[]> = {
@@ -53,6 +56,20 @@ const REASON_LABEL: Record<string, string> = {
 const TIER_LABEL: Record<string, string> = { new: '신규', regular: '일반', vip: 'VIP' };
 
 const valueLabel = (v: string) => VALUE_LABEL[v] ?? v;
+
+const viewQuery = (name: string) => `@type:view @view.name:${val(name)}`;
+/** RUM query per funnel step; index 0 is the entry step. */
+const STEP_RUM: Record<BiMode, string[]> = {
+    action: [RUM.sessions, RUM.signup, RUM.kycApproved, RUM.deposit, RUM.orderFilled],
+    view: STEP_LABEL.view.map(viewQuery),
+};
+/** '(none)' is the funnel bucket for sessions without the attribute. */
+function dimQuery(dim: BiDim, value: string): string {
+    const field = BI_DIM_FIELD[dim];
+    if (!field || value === 'all') return '';
+    return value === '(none)' ? `-${field}:*` : `${field}:${val(value)}`;
+}
+const linker = (w: Window, dim: BiDim) => (query: string, value: string) => rumUrl(`${query} ${dimQuery(dim, value)}`, w);
 
 function secs(s: number | null): string {
     if (s === null) return '-';
@@ -128,7 +145,13 @@ export function Bi({ range }: { range: RangeKey }) {
                 ) : pq.isError || !pq.data ? (
                     <ErrorBox error={pq.error} />
                 ) : (
-                    <PathsSection links={pq.data.links} sessions={pq.data.sessions} view={pq.data.view} direction={pq.data.direction} />
+                    <PathsSection
+                        links={pq.data.links}
+                        sessions={pq.data.sessions}
+                        view={pq.data.view}
+                        direction={pq.data.direction}
+                        window={pq.data.range.window}
+                    />
                 )}
             </Card>
         </div>
@@ -137,6 +160,8 @@ export function Bi({ range }: { range: RangeKey }) {
 
 function FunnelSection({ data: d }: { data: Awaited<ReturnType<typeof getBiFunnel>> }) {
     const labels = STEP_LABEL[d.mode];
+    const stepQ = STEP_RUM[d.mode];
+    const link = linker(d.range.window, d.dim);
     const rows: BiFunnelRow[] = d.dim === 'none' ? [d.all] : d.rows.slice(0, 6);
     const a = d.all;
     const transitions = [
@@ -153,24 +178,27 @@ function FunnelSection({ data: d }: { data: Awaited<ReturnType<typeof getBiFunne
     return (
         <>
             <div className="tiles">
-                <Tile label={labels[0]} value={a.steps[0]} format={count} sub={`${d.range.label} · 로그인 세션 제외`} />
+                <Tile label={labels[0]} value={a.steps[0]} format={count} sub={`${d.range.label} · 로그인 세션 제외`} href={link(stepQ[0], 'all')} />
                 <Tile
                     label="가입 전환율"
                     value={ratio(a.steps[1], a.steps[0]) * 100}
                     format={(n) => pct(n)}
                     sub={`${labels[0]} ${count(a.steps[0])} → ${labels[1]} ${count(a.steps[1])}`}
+                    href={link(stepQ[1], 'all')}
                 />
                 <Tile
                     label="첫 거래 전환율"
                     value={ratio(a.steps[4], a.steps[0]) * 100}
                     format={(n) => pct(n)}
                     sub={`${labels[4]}까지 ${count(a.steps[4])}세션`}
+                    href={link(stepQ[4], 'all')}
                 />
                 <Tile
                     label={d.mode === 'action' ? '가입까지 걸린 시간 (중앙값)' : 'signup 화면까지 (중앙값)'}
                     value={a.timings[0]?.[0] ?? 0}
                     format={(n) => secs(n)}
                     sub={`p90 ${secs(a.timings[0]?.[1] ?? null)} · 첫 거래까지 ${secs(a.total[0])}`}
+                    href={link(stepQ[1], 'all')}
                 />
             </div>
 
@@ -188,12 +216,15 @@ function FunnelSection({ data: d }: { data: Awaited<ReturnType<typeof getBiFunne
                         <tbody>
                             {labels.map((step, i) => (
                                 <tr key={step}>
-                                    <td>{step}</td>
+                                    <td>
+                                        <MaybeLink href={link(stepQ[i], 'all')}>{step} ↗</MaybeLink>
+                                    </td>
                                     {rows.map((r, c) => {
                                         const conv = i === 0 ? 1 : ratio(r.steps[i], r.steps[i - 1]);
                                         const width = ratio(r.steps[i], r.steps[0]) * 100;
                                         return (
                                             <td key={r.dim}>
+                                                <MaybeLink href={link(stepQ[i], r.dim)} className="cell-link" title={`${valueLabel(r.dim)} · ${step} 이벤트를 RUM Explorer에서 보기`}>
                                                 <div className="bar-cell">
                                                     <div className="bar" style={{ width: `${width}%`, background: `${BAR[c % BAR.length]}` }} />
                                                     <span>
@@ -206,6 +237,7 @@ function FunnelSection({ data: d }: { data: Awaited<ReturnType<typeof getBiFunne
                                                         )}
                                                     </span>
                                                 </div>
+                                                </MaybeLink>
                                             </td>
                                         );
                                     })}
@@ -234,7 +266,9 @@ function FunnelSection({ data: d }: { data: Awaited<ReturnType<typeof getBiFunne
                                         <td>{t}</td>
                                         {rows.map((r) => (
                                             <td key={r.dim} className={max !== null && r.timings[i]?.[0] === max ? 'slowest' : ''}>
-                                                {timing(r.timings[i])}
+                                                <MaybeLink href={link(stepQ[i + 1], r.dim)} title={`${valueLabel(r.dim)} · ${labels[i + 1]} 이벤트 보기`}>
+                                                    {timing(r.timings[i])}
+                                                </MaybeLink>
                                             </td>
                                         ))}
                                     </tr>
@@ -270,12 +304,24 @@ function FunnelSection({ data: d }: { data: Awaited<ReturnType<typeof getBiFunne
                         <tbody>
                             {rows.map((r) => (
                                 <tr key={r.dim}>
-                                    <td>{valueLabel(r.dim)}</td>
-                                    <td>{count(r.steps[0])}</td>
-                                    <td>{pct(ratio(r.steps[1], r.steps[0]) * 100)}</td>
-                                    <td>{pct(ratio(r.steps[3], r.steps[0]) * 100)}</td>
-                                    <td>{r.avgFirstDepositKrw ? krw(r.avgFirstDepositKrw) : '-'}</td>
-                                    <td>{krw(r.orderKrw)}</td>
+                                    <td>
+                                        <MaybeLink href={link(RUM.sessions, r.dim)}>{valueLabel(r.dim)} ↗</MaybeLink>
+                                    </td>
+                                    <td>
+                                        <MaybeLink href={link(stepQ[0], r.dim)}>{count(r.steps[0])}</MaybeLink>
+                                    </td>
+                                    <td>
+                                        <MaybeLink href={link(stepQ[1], r.dim)}>{pct(ratio(r.steps[1], r.steps[0]) * 100)}</MaybeLink>
+                                    </td>
+                                    <td>
+                                        <MaybeLink href={link(stepQ[3], r.dim)}>{pct(ratio(r.steps[3], r.steps[0]) * 100)}</MaybeLink>
+                                    </td>
+                                    <td>
+                                        <MaybeLink href={link(RUM.deposit, r.dim)}>{r.avgFirstDepositKrw ? krw(r.avgFirstDepositKrw) : '-'}</MaybeLink>
+                                    </td>
+                                    <td>
+                                        <MaybeLink href={link(RUM.orderFilled, r.dim)}>{krw(r.orderKrw)}</MaybeLink>
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>
@@ -288,11 +334,13 @@ function FunnelSection({ data: d }: { data: Awaited<ReturnType<typeof getBiFunne
                 <div className="stack">
                     <Card title="이탈 사유">
                         <div className="reason-grid">
-                            <Reasons title="KYC 실패" data={d.reasons.kyc} />
-                            <Reasons title="주문 실패" data={d.reasons.order} />
+                            <Reasons title="KYC 실패" data={d.reasons.kyc} href={(k) => rumUrl(`${RUM.kycFailed} @context.kyc.reason:${val(k)}`, d.range.window)} />
+                            <Reasons title="주문 실패" data={d.reasons.order} href={(k) => rumUrl(`${RUM.orderFailed} @context.order.reason:${val(k)}`, d.range.window)} />
                             <div>
                                 <h4>입금 지연 (60초 넘게 대기)</h4>
-                                <div className="reason-big">{count(d.reasons.depositStuck)}건</div>
+                                <MaybeLink href={rumUrl(action('deposit_stuck'), d.range.window)}>
+                                    <div className="reason-big">{count(d.reasons.depositStuck)}건 ↗</div>
+                                </MaybeLink>
                             </div>
                         </div>
                     </Card>
@@ -308,7 +356,9 @@ function FunnelSection({ data: d }: { data: Awaited<ReturnType<typeof getBiFunne
                             <tbody>
                                 {d.tiers.map((t) => (
                                     <tr key={t.tier}>
-                                        <td>{TIER_LABEL[t.tier] ?? t.tier}</td>
+                                        <td>
+                                            <MaybeLink href={rumUrl(`${RUM.orderFilled} @usr.tier:${val(t.tier)}`, d.range.window)}>{TIER_LABEL[t.tier] ?? t.tier} ↗</MaybeLink>
+                                        </td>
                                         <td>{count(t.orders)}</td>
                                         <td>{krw(t.avgKrw)}</td>
                                     </tr>
@@ -329,7 +379,7 @@ function FunnelSection({ data: d }: { data: Awaited<ReturnType<typeof getBiFunne
 
 const BAR = ['rgba(33, 177, 255, 0.25)', 'rgba(124, 92, 255, 0.28)', 'rgba(46, 160, 67, 0.25)', 'rgba(240, 136, 62, 0.25)', 'rgba(198, 120, 221, 0.25)', 'rgba(86, 182, 194, 0.25)'];
 
-function Reasons({ title, data }: { title: string; data: Record<string, number> }) {
+function Reasons({ title, data, href }: { title: string; data: Record<string, number>; href: (reason: string) => string }) {
     const entries = Object.entries(data)
         .filter(([k]) => k && k !== 'all')
         .sort((a, b) => b[1] - a[1]);
@@ -342,8 +392,10 @@ function Reasons({ title, data }: { title: string; data: Record<string, number> 
                 <ul className="reason-list">
                     {entries.map(([k, v]) => (
                         <li key={k}>
-                            <span>{REASON_LABEL[k] ?? k}</span>
-                            <strong>{count(v)}</strong>
+                            <MaybeLink href={href(k)} className="reason-link">
+                                <span>{REASON_LABEL[k] ?? k} ↗</span>
+                                <strong>{count(v)}</strong>
+                            </MaybeLink>
                         </li>
                     ))}
                 </ul>
@@ -352,7 +404,19 @@ function Reasons({ title, data }: { title: string; data: Record<string, number> 
     );
 }
 
-function PathsSection({ links, sessions, view, direction }: { links: BiLink[]; sessions: number; view: BiView; direction: BiDirection }) {
+function PathsSection({
+    links,
+    sessions,
+    view,
+    direction,
+    window: w,
+}: {
+    links: BiLink[];
+    sessions: number;
+    view: BiView;
+    direction: BiDirection;
+    window: Window;
+}) {
     const first = links.filter((l) => l.step === (direction === 'after' ? 0 : -1));
     const total = first.reduce((s, l) => s + l.n, 0);
     const top = [...first]
@@ -362,9 +426,11 @@ function PathsSection({ links, sessions, view, direction }: { links: BiLink[]; s
     return (
         <>
             <div className="paths-summary">
-                <strong>
-                    {VIEW_LABEL[view]} 화면을 연 세션 {count(sessions)}개
-                </strong>
+                <MaybeLink href={rumUrl(viewQuery(view), w)}>
+                    <strong>
+                        {VIEW_LABEL[view]} 화면을 연 세션 {count(sessions)}개 ↗
+                    </strong>
+                </MaybeLink>
                 <span className="muted">{direction === 'after' ? '바로 다음 화면' : '바로 이전 화면'}:</span>
                 {ranked.map(([name, n]) => (
                     <span key={name} className={`pill ${name === '(exit)' ? 'pill-bad' : ''}`}>
@@ -372,7 +438,7 @@ function PathsSection({ links, sessions, view, direction }: { links: BiLink[]; s
                     </span>
                 ))}
             </div>
-            <Sankey links={links} labels={VIEW_LABEL} anchor={VIEW_LABEL[view]} />
+            <Sankey links={links} labels={VIEW_LABEL} anchor={VIEW_LABEL[view]} viewLink={(name) => rumUrl(viewQuery(name), w)} />
             <div className="muted small">
                 세션에서 {VIEW_LABEL[view]} 화면을 처음 연 시점 기준 {direction === 'after' ? '이후 3단계' : '이전 3단계'}. 선 굵기 = 세션 수, 회색 = 세션 종료(이탈).
                 {direction === 'before' && ' 세션 첫 화면이 이 화면이면 이전 경로가 없어 집계에서 빠집니다.'}

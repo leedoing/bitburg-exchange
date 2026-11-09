@@ -4,6 +4,7 @@ import { useState } from 'react';
 
 import { getOps } from '../pulse.backend';
 import type { Level, RangeKey } from '../shared/types';
+import { action, RUM, rumUrl, STAGE_RUM } from '../shared/links';
 import { Chart } from '../ui/Chart';
 import { count, dateTime } from '../ui/format';
 import { Card, ErrorBox, LevelTag, Loading, Tile } from '../ui/parts';
@@ -24,6 +25,8 @@ const BITS_QUESTIONS = [
 ];
 
 const TOPIC_LABEL: Record<string, string> = { deposit: '입금', kyc: 'KYC', order: '주문' };
+const TOPIC_KEY = Object.fromEntries(Object.entries(TOPIC_LABEL).map(([k, v]) => [v, k]));
+const csQuery = (topic?: string) => (topic ? `${RUM.cs} @context.cs.topic:${topic}` : RUM.cs);
 
 function monitorLevel(state: string): Level {
     if (state === 'Alert') return 'bad';
@@ -65,26 +68,29 @@ export function Ops({ range }: { range: RangeKey }) {
     const worst = d.stages.some((s) => s.level === 'bad') ? 'bad' : d.stages.some((s) => s.level === 'warn') ? 'warn' : 'ok';
     const pendingLevel: Level = d.pendingMaxNow >= 45 ? 'bad' : d.pendingMaxNow >= 20 ? 'warn' : 'ok';
     const csDeposit = d.csTotal.deposit ?? 0;
+    const w = d.range.window;
+    const last5 = { from: w.to - 5 * 60_000, to: w.to };
     return (
         <div className="stack">
             <Card title="지금 장애인가?" extra={<LevelTag level={worst} />}>
                 <div className="stage-rows">
                     {d.stages.map((s) => (
-                        <div key={s.key} className="stage-row">
+                        <a key={s.key} className="stage-row rum-link" href={rumUrl(STAGE_RUM[s.key] ?? '', last5)} target="_blank" rel="noreferrer" title="최근 5분 RUM 이벤트 보기">
                             <LevelTag level={s.level} />
-                            <strong>{s.label}</strong>
+                            <strong>{s.label} ↗</strong>
                             <span>{s.headline}</span>
                             <span className="muted">{s.detail}</span>
-                        </div>
+                        </a>
                     ))}
                 </div>
             </Card>
             <div className="tiles">
-                <Tile label="입금 대기 최장 시간 (지금)" value={d.pendingMaxNow} format={(n) => `${Math.round(n)}초`} level={pendingLevel} sub="45초 넘으면 장애" />
-                <Tile label="입금 대기 중" value={d.pendingCountNow} format={(n) => `${Math.round(n)}건`} />
-                <Tile label={`입금 CS 문의 (${d.range.label})`} value={csDeposit} format={(n) => `${count(n)}건`} />
+                <Tile label="입금 대기 최장 시간 (지금)" value={d.pendingMaxNow} format={(n) => `${Math.round(n)}초`} level={pendingLevel} sub="45초 넘으면 장애" href={rumUrl(action('deposit_stuck'), last5)} />
+                <Tile label="입금 대기 중" value={d.pendingCountNow} format={(n) => `${Math.round(n)}건`} href={rumUrl(RUM.depositWaiting, last5)} />
+                <Tile label={`입금 CS 문의 (${d.range.label})`} value={csDeposit} format={(n) => `${count(n)}건`} href={rumUrl(csQuery('deposit'), w)} />
                 <Tile
                     label="전체 CS 문의"
+                    href={rumUrl(RUM.cs, w)}
                     value={Object.values(d.csTotal).reduce((a, b) => a + b, 0)}
                     format={(n) => `${count(n)}건`}
                     sub={Object.entries(d.csTotal)
@@ -94,7 +100,7 @@ export function Ops({ range }: { range: RangeKey }) {
             </div>
             <div className="grid-2">
                 <Card title="입금 대기 최장 시간 (초)">
-                    <Chart series={d.pendingSeries} window={d.range.window} faults={d.windows} threshold={{ value: 45, label: '45초' }} />
+                    <Chart series={d.pendingSeries} window={d.range.window} faults={d.windows} threshold={{ value: 45, label: '45초' }} link={(_, bw) => rumUrl(RUM.depositWaiting, bw)} />
                 </Card>
                 <Card title="CS 문의 추이 (주제별)">
                     <Chart
@@ -102,6 +108,7 @@ export function Ops({ range }: { range: RangeKey }) {
                         window={d.range.window}
                         faults={d.windows}
                         kind="bar"
+                        link={(label, bw) => rumUrl(csQuery(label ? (TOPIC_KEY[label] ?? label) : undefined), bw)}
                         empty="이 구간에 CS 문의가 없습니다"
                     />
                 </Card>
