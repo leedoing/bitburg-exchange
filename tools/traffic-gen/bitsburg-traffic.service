@@ -1,0 +1,21 @@
+[Unit]
+Description=Bitsburg Exchange traffic-gen (baseline, always on)
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/bitsburg
+Environment=TRAFFIC_MODE=baseline
+Environment=TRAFFIC_CONCURRENCY=10
+Environment=TRAFFIC_DURATION=0
+Environment=TRAFFIC_TARGET=http://web
+ExecStartPre=-/usr/bin/docker rm -f bitsburg-traffic
+ExecStart=/usr/bin/docker compose --profile traffic run --rm --no-deps --name bitsburg-traffic traffic-gen
+ExecStop=/usr/bin/docker stop -t 20 bitsburg-traffic
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

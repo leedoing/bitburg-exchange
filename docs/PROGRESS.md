@@ -148,3 +148,37 @@ MCP 검증 (`execute_code`: `EventsApi.listEvents tags=source:bitsburg-admin`, `
 | 장애 중 kyc 에러 span (timeout) | v2만 16건, v1 0건 |
 | 시작 Event | `[Bitsburg] 장애 주입 시작: kyc_vendor_slow` (warning, tags scenario:kyc_vendor_slow, source:bitsburg-admin, env:demo-coinone) |
 | 종료 Event | `[Bitsburg] 장애 주입 종료: kyc_vendor_slow` (success, "자동 해제, 지속 약 1분") |
+
+### 5단계. 트래픽 생성기
+
+- 시작: 2026-11-09 17:04 KST
+- 할 일: Playwright 가상 사용자(데스크톱 Chrome UA), baseline·listing_spike 모드, 신규 40%/기존 60%, 버전 60/40, 플랫폼 30/40/30, 전환 확률·금액 분포, 포기 규칙, listing_spike HTTP 부하, systemd 서비스 파일, 로컬 baseline 3명 10분 후 MCP로 session.type·버전·플랫폼·퍼널 확인
+- 종료: 2026-11-09 17:37 KST, **완료**
+
+결과
+- `tools/traffic-gen`: `pnpm traffic --mode baseline|listing_spike|verify --concurrency N --duration 분(0=무한) --target URL`. Docker 이미지는 `mcr.microsoft.com/playwright:v1.65.0-noble`(Node 26, corepack이 없어 `npm i -g pnpm`), compose `--profile traffic`의 `traffic-gen` 서비스로 실행합니다.
+- 브라우저 UA는 데스크톱 Chrome/158(Mac)로 고정해서 세션이 `@session.type:user`로 잡힙니다.
+- listing_spike는 Playwright 사용자에 더해 HTTP 부하 35~65명(로그인 후 PUPS 매수, `listing_pups` 헤더)을 같이 돌립니다.
+- `tools/traffic-gen/bitsburg-traffic.service`: EC2에서 `docker compose --profile traffic run` 으로 baseline 10명을 상시 실행(Restart=always).
+- 검증은 두 번 돌렸습니다. 3명 10분(08:05~08:17 UTC, 세션 14개)은 신규 여정이 4개뿐이어서, 10명 15분(08:17~08:36 UTC, 세션 61개)을 추가로 돌려 합쳐서 봤습니다.
+- 참고: RUM 세션의 앱 버전 facet은 `@version`이 아니라 예약 필드 `version`입니다. 7·9단계 쿼리에 그대로 씁니다.
+
+MCP 검증 (`execute_code`: `RUMApi.aggregateRUMEvents`, 08:05~08:38 UTC, 앱 b6478d57…)
+
+| 확인 항목 | 결과 |
+| --- | --- |
+| @session.type | `user` 75 (synthetic 0) |
+| version | 3.4.2 42 / 3.5.0 33 (56% / 44%, 스펙 60/40) |
+| @context.client.platform | web 28 / ios 23 / android 24 (스펙 30/40/30, 표본 작음) |
+| operation | signup 성공 21·실패 9, kyc_verification 성공 16·실패 2, krw_deposit 성공 11, place_order 성공 107 |
+
+퍼널 (세션 수 기준, `cardinality(@session.id)`)
+
+| 단계 | 세션 수 | 전환율 | 스펙 |
+| --- | --- | --- | --- |
+| signup 화면 진입 → signup_completed | 30 → 21 | 70% | 75% |
+| signup_completed → kyc_approved | 21 → 16 | 76% | 80% |
+| kyc_approved → deposit_completed | 16 → 11 | 69% | 65% |
+| deposit_completed → 첫 order_filled | 11 → 11 | 100% | 80% |
+
+마지막 단계 100%는 표본 11개에서 나온 편차입니다(확률 80%로 11/11이 나올 확률 약 9%, 코드는 `placeFirstOrder: 0.8`). EC2에서 상시로 돌리면 하루 뒤 수백 세션으로 다시 봅니다(8단계 A).
