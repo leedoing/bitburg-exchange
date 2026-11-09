@@ -1,0 +1,28 @@
+node_modules/
+dist/
+build/
+.env
+.env.*
+!.env.example
+.cursor/mcp.json
+*.log
+.DS_Store
+coverage/
+.vite/
+.turbo/
+.pnpm-store/
+
+# terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+.terraform.lock.hcl.bak
+crash.log
+
+# local artifacts
+artifacts/
+tools/traffic-gen/test-results/
+tools/traffic-gen/playwright-report/
+screenshots/tmp/
