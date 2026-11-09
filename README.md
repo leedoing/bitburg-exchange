@@ -93,6 +93,11 @@ npm run upload     # Datadog에 게시
 
 자세한 탭 구성과 데이터 출처는 [`apps/bitsburg-pulse/README.md`](apps/bitsburg-pulse/README.md)에 있습니다.
 
+발표 때 참석자가 Datadog 계정 없이 같이 보도록 EC2에서도 Pulse를 띄웁니다: `http://<EIP>:8080` (`terraform output pulse_url`). 이 주소는 로그인 없이 열리고 시나리오 컨트롤 탭도 누를 수 있습니다.
+- compose `pulse` 서비스(profile `pulse`)가 `datadog-apps dev`를 컨테이너로 돌립니다. 백엔드 함수는 Datadog에서 실행되고, 컨테이너에는 Pulse 코드와 환경변수 키만 있습니다.
+- 키는 이 용도 전용 App 키 `bitsburg-pulse-ec2`입니다. `infra/pulse-key.sh`가 키를 만들고 Actions API에 등록한 뒤 SSM `/bitsburg-demo/PULSE_DD_APP_KEY`에 넣습니다. 값은 출력하지 않습니다. 행사 후 `infra/pulse-key.sh revoke`로 폐기합니다(`teardown.sh`도 호출).
+- 조회 함수(`get*`) 응답은 컨테이너에서 20초 동안 공유합니다(`shared-cache.vite.ts`). 그래서 시청자 수와 상관없이 Datadog 호출량이 일정합니다. 장애 스위치 상태는 3초만 공유하고, 토글하면 바로 비웁니다.
+
 ## AWS 배포
 
 저장소가 private이라 EC2는 git clone 대신 S3 아티팩트로 코드를 받습니다. 비밀값은 SSM Parameter Store `/bitsburg-demo/*`에 둡니다.
@@ -109,7 +114,7 @@ EC2에서는 `bitsburg-traffic.service`가 baseline 트래픽을 상시로 돌�
 
 ## 정리
 
-행사가 끝나면 `infra/teardown.sh`(AWS)와 `infra/datadog/tf.sh destroy`(Datadog Terraform 리소스)를 실행합니다. RUM retention filter, Journey, HTTP Connection, Datadog App은 Terraform 밖에서 만들었으므로 따로 지웁니다. 목록은 `docs/PROGRESS.md`의 최종 요약에 있습니다. 삭제는 모두 사람이 확인한 뒤 진행합니다.
+행사가 끝나면 `infra/teardown.sh`(AWS, Pulse 전용 App 키 폐기 포함)와 `infra/datadog/tf.sh destroy`(Datadog Terraform 리소스)를 실행합니다. RUM retention filter, Journey, HTTP Connection, Datadog App은 Terraform 밖에서 만들었으므로 따로 지웁니다. 목록은 `docs/PROGRESS.md`의 최종 요약에 있습니다. 삭제는 모두 사람이 확인한 뒤 진행합니다.
 
 ## 보안 원칙
 

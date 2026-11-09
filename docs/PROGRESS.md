@@ -415,6 +415,30 @@ MCP 검증 (`execute_code` `MetricsApi.queryScalarData`, `aggregate_rum_events`)
 
 알아 둘 점: 배포 전 로그에는 `campaign.id`가 없습니다. 그래서 그 전에 들어온 `promo_deposit_bonus` 주문(24시간 99건)의 거래대금은 캠페인 탭에서 평시로 잡히고, 캠페인 거래대금이 ₩0으로 보입니다. 11/11 00:40 KST가 지나 24시간 구간에서 빠지면 정상입니다. 백업 대시보드에서 버전·캠페인 템플릿 변수를 고르면 배포 이후 로그만 합칩니다.
 
+### 9단계 추가: Pulse를 EC2 :8080에 공개 (2026-11-10 02:15 KST)
+
+사용자 요청: 발표 때 고객사·외부 참석자(Datadog 계정 없음)가 같이 들어와 보도록 Pulse를 EC2에 배포. 시나리오 컨트롤 탭까지 공개하고, 건드리지 말라는 안내는 구두로 합니다.
+
+변경
+- `apps/bitsburg-pulse/Dockerfile`(node:24-slim, `datadog-apps dev`)와 compose `pulse` 서비스(profile `pulse`, `8080:5173`, mem_limit 1g)를 추가했습니다. 컨테이너가 받는 키는 `DD_API_KEY`와 `PULSE_DD_APP_KEY`(환경변수)뿐입니다.
+- `vite.config.ts`: `PULSE_PUBLIC`일 때만 `0.0.0.0:5173`에서 듣고 HMR을 끕니다. 또 `shared-cache.vite.ts`로 `get*` 응답을 20초(장애 스위치 상태는 3초) 동안 공유합니다. `setFault`·`setCampaign`은 캐시하지 않고, 호출되면 상태 캐시를 비웁니다. 로컬 `npm run dev`는 그대로입니다.
+- `infra/pulse-key.sh`: 전용 App 키 `bitsburg-pulse-ec2`를 만들고 Actions API에 등록합니다(`PUT /api/v2/actions/app_key_registrations/{id}`). 등록하지 않으면 403 "actions API access is not enabled"가 납니다. 키는 SSM `/bitsburg-demo/PULSE_DD_APP_KEY`(SecureString, Purpose 태그)에 넣고 출력하지 않습니다. `revoke`는 키와 파라미터를 지우고, `teardown.sh`가 이를 호출합니다.
+- 호스트 배포 스크립트를 저장소로 옮겼습니다(`infra/host/bitsburg-deploy.sh`). `infra/deploy.sh`가 매번 아티팩트에서 이 스크립트를 다시 설치한 뒤 실행합니다. 스크립트는 SSM에 `PULSE_DD_APP_KEY`가 있을 때만 Pulse를 띄웁니다. user-data는 `ignore_changes`라 인스턴스 재시작이 없습니다.
+- 보안 그룹 `bitsburg-demo-web`에 TCP 8080(0.0.0.0/0)을 추가했습니다. terraform plan은 0 add, 1 change(`aws_security_group.web` in-place), 0 destroy였고 apply했습니다. 출력 `pulse_url`을 추가했습니다.
+
+검증
+
+| 확인 항목 | 결과 |
+| --- | --- |
+| http://43.202.19.36:8080 탭 6개 (1시간) | 상황판·운영·PM·BI·캠페인·경영 요약 모두 오류 없음, 4~10초 안에 로드 |
+| 시나리오 컨트롤 탭 | 장애 스위치 상태 표시, 오류 없음 (토글은 누르지 않음) |
+| 공유 캐시 (로컬 컨테이너) | 첫 호출 3.6초 → 같은 호출 3ms, 동시 3건도 캐시 응답 |
+| EC2 메모리 | Pulse 491MiB / 1GiB 한도, 호스트 available 1.33GB (스왑 2GB 별도) |
+| 웹 :80 | 200 |
+| RUM 유입 (MCP `aggregate_rum_events`, 재배포 전후 10분) | 2분마다 액션 174·213·252·214·175건, 세션 11~19개 (끊김 없음) |
+
+알아 둘 점: URL만 알면 누구나 Pulse 데이터(이 org의 데모 데이터)를 보고 장애 스위치를 켤 수 있습니다. 행사 후 `infra/pulse-key.sh revoke`를 실행하면 Pulse가 바로 데이터를 못 읽게 됩니다.
+
 ## 최종 요약 (2026-11-09 21:05 KST)
 
 0~7단계와 9단계를 마쳤습니다. 8단계(데이터 점검)는 요청대로 하지 않았고 아래 "다음 날 확인할 것"에 넣었습니다.
@@ -422,13 +446,14 @@ MCP 검증 (`execute_code` `MetricsApi.queryScalarData`, `aggregate_rum_events`)
 | 항목 | 값 |
 | --- | --- |
 | 웹 | http://43.202.19.36 (EC2 `i-03821f4129b934d82`, baseline 트래픽 10명 상시) |
+| Pulse 공유 주소 | http://43.202.19.36:8080 (로그인 없음, 컨트롤 탭 포함) |
 | Datadog App | https://hyunjin.datadoghq.com/app-builder/apps/93c2badc-45cf-4c9d-aeba-1b87e70a0f81 |
 | 백업 대시보드 | https://hyunjin.datadoghq.com/dashboard/efb-z22-iqv |
 | 저장소 | https://github.com/leedoing/bitburg-exchange (main) |
 
 만든 리소스
-- AWS (ap-northeast-2, 전부 `Purpose=coinone-abm-demo`): VPC·서브넷·IGW·라우트 테이블, 보안 그룹 `bitsburg-demo-web`(80), IAM 역할·인스턴스 프로파일 `bitsburg-demo-ec2`, S3 `bitsburg-demo-artifacts-557652101750`, EC2 t3.medium, EIP 43.202.19.36, SSM 파라미터 `/bitsburg-demo/*` 5개, Budget `bitsburg-demo-monthly-50usd`. 예상 월 약 44달러.
-- Datadog: RUM 앱 Bitsburg Exchange, 모니터 4개(342560230·342560226·342560231·342560227), SLO 3개, 대시보드 efb-z22-iqv, RUM retention filter 8075c698…, Journey d94-wvb-kmd, SDS 그룹 794855dc…, HTTP Connection `bitsburg-admin-api` 4b2edd33…, Datadog App Bitsburg Pulse 93c2badc….
+- AWS (ap-northeast-2, 전부 `Purpose=coinone-abm-demo`): VPC·서브넷·IGW·라우트 테이블, 보안 그룹 `bitsburg-demo-web`(80, 8080), IAM 역할·인스턴스 프로파일 `bitsburg-demo-ec2`, S3 `bitsburg-demo-artifacts-557652101750`, EC2 t3.medium, EIP 43.202.19.36, SSM 파라미터 `/bitsburg-demo/*` 6개(Pulse App 키 포함), Budget `bitsburg-demo-monthly-50usd`. 예상 월 약 44달러.
+- Datadog: RUM 앱 Bitsburg Exchange, 모니터 4개(342560230·342560226·342560231·342560227), SLO 3개, 대시보드 efb-z22-iqv, RUM retention filter 8075c698…, Journey d94-wvb-kmd, SDS 그룹 794855dc…, HTTP Connection `bitsburg-admin-api` 4b2edd33…, Datadog App Bitsburg Pulse 93c2badc…, Pulse EC2 전용 App 키 `bitsburg-pulse-ec2`(`infra/pulse-key.sh revoke`로 폐기).
 - 정리: 행사 다음 날 `infra/teardown.sh`(AWS)와 `infra/datadog/tf.sh destroy`(Datadog Terraform 리소스). retention filter·Journey·Connection·App은 Terraform 밖이라 따로 지워야 합니다. 삭제는 모두 사람 확인 후.
 
 사람이 할 일: 위 "사람이 할 일" 목록 그대로입니다 (Bits 자동 조사 켜기, Journey 중간 단계·operation 연결, PA 퍼널 저장, 리플레이 재생 눈 확인, 앱 열어 보기와 권한, 대시보드에 앱 넣기(선택), 장애 캡처 다시 찍기, delete_after 태그, Cost allocation tag, teardown).
