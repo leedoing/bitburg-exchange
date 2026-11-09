@@ -3,6 +3,7 @@ import { useIsFetching } from '@tanstack/react-query';
 import { useCallback, useEffect, useState } from 'react';
 
 import type { RangeKey } from './shared/types';
+import { Bi } from './tabs/Bi';
 import { Campaign } from './tabs/Campaign';
 import { Control } from './tabs/Control';
 import { Exec } from './tabs/Exec';
@@ -14,6 +15,7 @@ const TABS = [
     { value: 'situation', label: '상황판' },
     { value: 'ops', label: '운영·CS' },
     { value: 'pm', label: 'PM·DA' },
+    { value: 'bi', label: 'BI·그로스' },
     { value: 'campaign', label: '캠페인' },
     { value: 'exec', label: '경영 요약' },
     { value: 'control', label: '시나리오 컨트롤' },
@@ -92,6 +94,7 @@ function App() {
                 {tab === 'situation' && <Situation range={range} />}
                 {tab === 'ops' && <Ops range={range} />}
                 {tab === 'pm' && <Pm range={range} />}
+                {tab === 'bi' && <Bi range={range} />}
                 {tab === 'campaign' && <Campaign range={range} />}
                 {tab === 'exec' && <Exec range={range} />}
                 {tab === 'control' && <Control />}

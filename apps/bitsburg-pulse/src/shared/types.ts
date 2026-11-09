@@ -124,6 +124,61 @@ export type ExecData = {
     today: { signups: number; firstDeposits: number; depositKrw: number; orders: number; orderKrw: number };
 };
 
+// ------------------------------------------------------------------ BI
+export const BI_DIMS = ['none', 'version', 'platform', 'source', 'campaign'] as const;
+export type BiDim = (typeof BI_DIMS)[number];
+export const BI_DIM_LABEL: Record<BiDim, string> = {
+    none: '전체',
+    version: '앱 버전',
+    platform: '플랫폼',
+    source: '유입 경로',
+    campaign: '캠페인',
+};
+
+export const BI_MODES = ['action', 'view'] as const;
+export type BiMode = (typeof BI_MODES)[number];
+
+export const BI_VIEWS = ['home', 'login', 'signup', 'kyc', 'deposit', 'trade'] as const;
+export type BiView = (typeof BI_VIEWS)[number];
+
+export type BiDirection = 'after' | 'before';
+
+/** Seconds between funnel steps: [p50, p90]. null when no session made that transition. */
+export type StepTiming = [number | null, number | null];
+
+export type BiFunnelRow = {
+    dim: string;
+    /** Sessions at each step; index 0 is the entry step (new visits or home view). */
+    steps: number[];
+    /** timings[i] = time from step i to step i+1. */
+    timings: StepTiming[];
+    /** Entry to the last step. */
+    total: StepTiming;
+    avgFirstDepositKrw: number;
+    orderKrw: number;
+};
+
+export type BiFunnelData = {
+    range: ResolvedRange;
+    mode: BiMode;
+    dim: BiDim;
+    stepLabels: string[];
+    all: BiFunnelRow;
+    rows: BiFunnelRow[];
+    reasons: { kyc: Record<string, number>; order: Record<string, number>; depositStuck: number };
+    tiers: { tier: string; orders: number; avgKrw: number }[];
+};
+
+export type BiLink = { step: number; from: string; to: string; n: number };
+
+export type BiPathsData = {
+    range: ResolvedRange;
+    view: BiView;
+    direction: BiDirection;
+    sessions: number;
+    links: BiLink[];
+};
+
 export type AdminFault = { name: string; enabled: boolean; intensity: number; remainingSec: number; expiresAt: string | null };
 export type AdminState = {
     ok: boolean;

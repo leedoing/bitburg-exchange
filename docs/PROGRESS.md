@@ -321,6 +321,30 @@ MCP 검증
 | 리플레이 있는 세션 (24시간) | 655개 |
 | 로컬 렌더 링크 | 상황판·운영·CS·PM·DA 링크 전부 `hyunjin.datadoghq.com`, 오류 없음 |
 
+### 9단계 추가: BI·그로스 탭 (2026-11-09 21:50 KST)
+
+사용자 요청: Funnel, Pathways 같은 기능을 넣은 BI 탭, 버전별 가입까지 걸린 시간 같은 마케터·PM용 지표.
+
+- 탭 `#/bi` (BI·그로스). 데이터는 DDSQL `dd.rum`(`@datadog/action-catalog/dd/ddsql` `tableQuery`, `src/server/bi.ts`). SQL은 고정 템플릿이고 기준·화면 값은 화이트리스트에서만 고릅니다.
+- 순서형 퍼널: 같은 세션에서 앞 단계 뒤에 다음 단계가 일어난 경우만 셉니다. 로그인 화면을 연 기존 회원 세션은 뺍니다. Action 기준(signup_completed → kyc_approved → deposit_completed → order_filled) / View 기준(home → signup → kyc → deposit → trade), 비교 기준 전체·앱 버전·플랫폼·유입 경로·캠페인.
+- 단계별 소요 시간: 단계 첫 발생 시각 차이의 중앙값·p90, 그룹 중 가장 느린 값 강조. 첫 방문 → 가입 완료, 첫 방문 → 첫 주문 체결 포함.
+- 그로스 성과표(신규 방문, 가입 전환, 첫 입금 전환, 평균 첫 입금액, 신규 거래대금), 이탈 사유(KYC·주문 실패 사유, 입금 지연 건수), 회원 등급별 주문 수·평균 주문액.
+- 경로 분석: 고른 화면을 처음 연 시점 기준 이후/이전 3단계 Sankey(`LEAD` 윈도 함수), 바로 다음/이전 화면 비율.
+- 게시 버전 `f46bc7588f439e85`. 캡처 `docs/screenshots/pulse-bi-6h.png`, `pulse-bi-view-source.png`.
+
+MCP 검증 (`ddsql_run_query`로 쿼리 원형 확인, `RUMApi.aggregateRUMEvents`로 건수 대조)
+
+| 확인 항목 | 결과 |
+| --- | --- |
+| View·Action·속성 | View 6개, Action 12개, 유입 경로 4개·캠페인·플랫폼·등급·버전 모두 집계 가능 |
+| 경로 쿼리 (6시간) | 1단계 home → login 444 / signup 290, signup → kyc 222, kyc → deposit 121 / home 101 |
+| 버전별 가입까지 (6시간, 중앙값) | 3.4.2 4.7초, 3.5.0 4.5초 |
+| BI 퍼널 (6시간, Action 기준) | 신규 방문 298 → 가입 229 (76.8%), 3.5.0 KYC 전환 79% vs 3.4.2 84%, 첫 거래 34.9% |
+| 6시간 vs 24시간 | RUM 데이터가 16:42 KST부터라 둘이 같음 (세션 759개, View 2,656개로 일치) |
+| 렌더 | 로컬 dev와 클라우드 경로(`dev:verify`) 모두 오류 없이 렌더 |
+
+다음 날 확인할 것에 추가: 24시간치(세션 수천 개)가 쌓인 뒤 BI 탭 응답 시간과 DDSQL 결과가 잘리지 않는지(RUM 집계 세션 수와 BI 신규 방문+로그인 세션 수 대조).
+
 ## 최종 요약 (2026-11-09 21:05 KST)
 
 0~7단계와 9단계를 마쳤습니다. 8단계(데이터 점검)는 요청대로 하지 않았고 아래 "다음 날 확인할 것"에 넣었습니다.
