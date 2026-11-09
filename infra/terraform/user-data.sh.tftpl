@@ -1,0 +1,72 @@
+#!/bin/bash
+# Bitsburg demo bootstrap (Amazon Linux 2023). Logs: /var/log/bitsburg-bootstrap.log
+set -euo pipefail
+exec > >(tee -a /var/log/bitsburg-bootstrap.log) 2>&1
+
+REGION="${region}"
+ARTIFACT_URL="${artifact_url}"
+set -x
+
+# --- swap (Playwright + 12 containers on 4GB)
+if [ ! -f /swapfile ]; then
+  dd if=/dev/zero of=/swapfile bs=1M count=2048
+  chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+  echo '/swapfile none swap sw 0 0' >> /etc/fstab
+fi
+
+# --- docker + compose + buildx
+dnf install -y docker jq tar gzip
+systemctl enable --now docker
+ARCH=$(uname -m)
+mkdir -p /usr/local/lib/docker/cli-plugins
+curl -fsSL "https://github.com/docker/compose/releases/download/v2.32.4/docker-compose-linux-$ARCH" -o /usr/local/lib/docker/cli-plugins/docker-compose
+BUILDX_ARCH=amd64; [ "$ARCH" = "aarch64" ] && BUILDX_ARCH=arm64
+curl -fsSL "https://github.com/docker/buildx/releases/download/v0.20.1/buildx-v0.20.1.linux-$BUILDX_ARCH" -o /usr/local/lib/docker/cli-plugins/docker-buildx
+chmod +x /usr/local/lib/docker/cli-plugins/docker-compose /usr/local/lib/docker/cli-plugins/docker-buildx
+
+# --- deploy script (also used by infra/deploy.sh through SSM Run Command)
+cat > /usr/local/bin/bitsburg-deploy <<'DEPLOY'
+#!/bin/bash
+# Usage: bitsburg-deploy <presigned tarball URL>
+set -euo pipefail
+URL="$1"
+REGION="$(curl -s -H "X-aws-ec2-metadata-token: $(curl -s -X PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 60')" http://169.254.169.254/latest/meta-data/placement/region)"
+mkdir -p /opt/bitsburg
+cd /opt/bitsburg
+curl -fsSL "$URL" -o /tmp/bitsburg.tgz
+tar -xzf /tmp/bitsburg.tgz -C /opt/bitsburg
+rm -f /tmp/bitsburg.tgz
+
+# .env from SSM Parameter Store (values never printed)
+umask 077
+# AmazonSSMManagedInstanceCore allows ssm:GetParameters but not GetParametersByPath.
+aws ssm get-parameters --region "$REGION" --with-decryption --output json \
+  --names /bitsburg-demo/DD_API_KEY /bitsburg-demo/DD_SITE /bitsburg-demo/DD_RUM_APP_ID \
+          /bitsburg-demo/DD_RUM_CLIENT_TOKEN /bitsburg-demo/ADMIN_TOKEN \
+  | jq -r '.Parameters[] | "\(.Name | sub("^/bitsburg-demo/"; ""))=\(.Value)"' > .env.tmp
+[ "$(wc -l < .env.tmp)" -eq 5 ] || { echo "missing SSM parameters" >&2; exit 1; }
+{
+  cat .env.tmp
+  echo "DD_HOSTNAME=bitsburg-demo"
+  echo "APP_VERSION_STABLE=3.4.2"
+  echo "APP_VERSION_NEW=3.5.0"
+  echo "WEB_PORT=80"
+} > .env
+rm -f .env.tmp
+
+docker compose up -d --build --remove-orphans
+docker compose --profile traffic build traffic-gen
+
+install -m 644 tools/traffic-gen/bitsburg-traffic.service /etc/systemd/system/bitsburg-traffic.service
+systemctl daemon-reload
+systemctl enable bitsburg-traffic.service
+systemctl restart bitsburg-traffic.service
+echo "bitsburg deploy done: $(date -u +%FT%TZ)"
+DEPLOY
+chmod +x /usr/local/bin/bitsburg-deploy
+
+set +x
+if [ -n "$ARTIFACT_URL" ]; then
+  echo "running bitsburg-deploy"
+  /usr/local/bin/bitsburg-deploy "$ARTIFACT_URL"
+fi

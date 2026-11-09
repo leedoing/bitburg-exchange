@@ -18,6 +18,8 @@
 
 - [ ] (비용) AWS 계정의 이번 달 지출이 이미 약 29.5달러(11/9 기준)입니다. Budget `bitsburg-demo-monthly-50usd`는 계정 전체 기준이라 80%(40달러) 알림이 곧 올 수 있습니다.
 - [ ] (비용) EC2 리소스가 생긴 뒤 하루 지나면 Billing > Cost allocation tags에서 `Purpose` 태그를 활성화하면 데모 비용만 따로 볼 수 있습니다.
+- [ ] (6단계) 행사 날짜가 정해지면 `infra/terraform/variables.tf`의 `delete_after` 기본값(현재 `TBD-day-after-demo`)을 행사 다음 날로 바꾸고 `terraform apply` (태그만 바뀜).
+- [ ] (6단계) 행사 다음 날 `infra/teardown.sh` 실행.
 - [ ] (3단계) RUM > Sessions에서 Bitsburg Exchange 세션 하나를 열어 Session Replay가 실제로 재생되는지 눈으로 확인 (데이터상 `has_replay:true`는 확인됨).
 
 ## 단계 기록
@@ -182,3 +184,43 @@ MCP 검증 (`execute_code`: `RUMApi.aggregateRUMEvents`, 08:05~08:38 UTC, 앱 b6
 | deposit_completed → 첫 order_filled | 11 → 11 | 100% | 80% |
 
 마지막 단계 100%는 표본 11개에서 나온 편차입니다(확률 80%로 11/11이 나올 확률 약 9%, 코드는 `placeFirstOrder: 0.8`). EC2에서 상시로 돌리면 하루 뒤 수백 세션으로 다시 봅니다(8단계 A).
+
+### 6단계. AWS EC2 배포
+
+- 시작: 2026-11-09 17:38 KST
+- 할 일: Terraform(infra/terraform, 로컬 state) VPC·서브넷·IGW·보안 그룹(80만)·IAM 역할(SSM Core)·S3 아티팩트 버킷·EC2 t3.medium AL2023 30GB gp3·EIP, SSM Parameter Store에 비밀값 업로드, user-data(docker·compose 설치 → S3 아티팩트 → SSM으로 .env → compose up → traffic-gen baseline systemd), teardown.sh, MCP로 host bitsburg-demo·서비스·RUM 세션 확인
+- 종료: 2026-11-09 18:48 KST, **완료**
+
+결과
+- 웹 URL: **http://43.202.19.36** (EIP), 인스턴스 `i-03821f4129b934d82`, 접속은 `aws ssm start-session --region ap-northeast-2 --target i-03821f4129b934d82` (22번 포트 없음).
+- 저장소가 private이라 git clone 대신 S3 아티팩트로 배포합니다. `infra/deploy.sh`가 `git archive HEAD`(.env 제외)를 버킷 `bitsburg-demo-artifacts-557652101750`에 올리고 7일짜리 presigned URL로 받게 합니다. 코드를 바꾼 뒤 재배포는 `infra/deploy.sh` 한 번(SSM Run Command로 `/usr/local/bin/bitsburg-deploy` 실행)이면 됩니다.
+- 비밀값은 `infra/ssm-push.sh`로 SSM Parameter Store에 올렸습니다. SecureString은 `DD_API_KEY`, `DD_RUM_CLIENT_TOKEN`, `ADMIN_TOKEN`이고, String은 `DD_SITE`, `DD_RUM_APP_ID`입니다. `DD_APP_KEY`는 EC2에 필요 없어서 올리지 않았습니다. EC2의 `.env`(600)는 배포 때 SSM에서 만들고 `DD_HOSTNAME=bitsburg-demo`를 붙입니다.
+- baseline 트래픽: systemd `bitsburg-traffic.service`(baseline 10명, 무한, Restart=always)를 상시 실행 중입니다. 메모리 사용은 3.8GB 중 약 1.7GB, swap 2GB.
+- 로컬 colima 스택은 지표가 두 호스트에서 겹치지 않도록 `docker compose stop` 해 두었습니다(볼륨 유지, `make up`으로 재개).
+- 수정한 문제: `AmazonSSMManagedInstanceCore`에는 `ssm:GetParametersByPath`가 없어 첫 부팅에서 `.env` 생성이 실패했습니다. IAM 정책을 늘리지 않고 `ssm:GetParameters`로 이름을 지정해 읽도록 바꿨습니다. 첫 부팅 로그(`/var/log/bitsburg-bootstrap.log`)에 presigned URL이 찍혀서, 이후로는 그 부분의 `set -x`를 껐습니다.
+- 정리: 행사 다음 날 `infra/teardown.sh` (terraform destroy + SSM 파라미터 삭제). 버킷은 `force_destroy`라 같이 지워집니다.
+
+terraform plan 요약 (로컬 state, ap-northeast-2, 모든 리소스에 `Purpose=coinone-abm-demo`, `Owner=hyunjin.lee@datadoghq.com`, `DeleteAfter=TBD-day-after-demo` 기본 태그)
+
+| 리소스 | 내용 |
+| --- | --- |
+| aws_vpc / subnet / internet_gateway / route_table(+association) | 10.42.0.0/16, 퍼블릭 서브넷 10.42.1.0/24 (2a). 계정에 기본 VPC가 없어 새로 만듦. NAT 없음 |
+| aws_security_group.web | 인바운드 80/tcp만 0.0.0.0/0, 아웃바운드 전체 |
+| aws_iam_role + instance_profile + policy_attachment | 새 역할 `bitsburg-demo-ec2`에 AWS 관리형 `AmazonSSMManagedInstanceCore`만 연결 (기존 IAM 사용자·정책 변경 없음) |
+| aws_s3_bucket(+public_access_block) | 코드 아티팩트, 퍼블릭 차단 |
+| aws_instance | t3.medium, AL2023, 30GB gp3 암호화, IMDSv2 필수 |
+| aws_eip | 43.202.19.36 |
+| 합계 | 13 to add, 0 to change, 0 to destroy. 예상 비용 월 약 44달러(EC2 38 + EBS 2.7 + EIP 3.6) |
+
+MCP 검증 (`execute_code`: `HostsApi.listHosts`, `SpansApi.aggregateSpans host:bitsburg-demo`, `RUMApi.aggregateRUMEvents`, 09:27~09:47 UTC)
+
+| 확인 항목 | 결과 |
+| --- | --- |
+| host bitsburg-demo | up, Agent 7.85.2, apps agent·trace·docker·container·runtime·bitsburg |
+| APM 서비스 (host:bitsburg-demo, 20분) | 9개: api-gateway 293, order 212, auth 84, wallet 54, matching 53, kyc 33, kyc-vendor 11, bank-gateway 5, admin 3 |
+| RUM (최근 15분) | `bitsburg-web` 세션 34개, 전부 `user`, version 3.4.2 19 / 3.5.0 15, geo Incheon(EC2 리전) |
+| 서비스 합계 | 백엔드 9 + RUM `bitsburg-web` = 10 |
+| 로그 (host:bitsburg-demo) | auth·kyc·order·wallet 등 서비스별로 수집 중 |
+| 퍼블릭 URL | `GET /` 200, `/api/demo/state` 정상, 토큰 없는 `/admin/state` 401 |
+
+참고: AWS 연동 때문에 같은 인스턴스가 `i-03821f4129b934d82`라는 호스트로도 한 줄 더 보입니다. Agent 데이터는 모두 `bitsburg-demo`로 들어옵니다.
