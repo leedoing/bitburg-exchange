@@ -1,12 +1,16 @@
 import { useContext, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 
 import { openUrl } from '../shared/links';
-import { MIN_ZOOM_MS, type FaultWindow, type Series, type Window } from '../shared/types';
+import { FAULT_LABEL, MIN_ZOOM_MS, type FaultName, type FaultWindow, type Series, type Window } from '../shared/types';
 import { clock } from './format';
 import { ZoomContext } from './zoom';
 
 /** Pointer travel (in SVG units) before a press counts as a drag rather than a click. */
 const DRAG_THRESHOLD = 6;
+
+/** Fault labels that would collide (same or close start) go on separate rows. Width is a rough per-character estimate. */
+const LABEL_ROW_H = 13;
+const labelWidth = (text: string) => text.length * 11 + 8;
 
 /** Builds a RUM Explorer link for one series (or all series when label is null) over a time bucket. */
 export type ChartLink = (label: string | null, w: Window) => string | null;
@@ -88,6 +92,15 @@ export function Chart({ series, window, faults = [], kind = 'line', height = 180
         .filter((f) => f.kind === 'fault')
         .map((f) => ({ ...f, a: Math.max(window.from, f.start), b: Math.min(window.to, f.end ?? window.to) }))
         .filter((f) => f.b > f.a);
+    const rowEnds: number[] = [];
+    const bandLabels = bands.map((b) => {
+        const text = `장애 · ${FAULT_LABEL[b.name as FaultName] ?? b.name}`;
+        const lx = x(b.a) + 4;
+        let row = rowEnds.findIndex((end) => end <= lx);
+        if (row < 0) row = rowEnds.push(0) - 1;
+        rowEnds[row] = lx + labelWidth(text);
+        return { text, lx, y: pad.t + 12 + row * LABEL_ROW_H };
+    });
     const campaigns = faults
         .filter((f) => f.kind === 'campaign')
         .map((f) => ({ ...f, a: Math.max(window.from, f.start), b: Math.min(window.to, f.end ?? window.to) }))
@@ -110,15 +123,17 @@ export function Chart({ series, window, faults = [], kind = 'line', height = 180
             <svg ref={svgRef} viewBox={`0 0 ${width} ${height}`} role="img" preserveAspectRatio="none" onPointerDown={onPointerDown}>
                 {zoom && !link && <title>드래그하면 그 구간으로 좁혀집니다</title>}
                 {campaigns.map((c) => (
-                    <rect key={`c${c.start}`} x={x(c.a)} y={pad.t} width={x(c.b) - x(c.a)} height={innerH} className="band-campaign" />
+                    <rect key={`c${c.name}${c.start}`} x={x(c.a)} y={pad.t} width={x(c.b) - x(c.a)} height={innerH} className="band-campaign" />
                 ))}
-                {bands.map((b) => (
-                    <g key={`f${b.start}`}>
-                        <rect x={x(b.a)} y={pad.t} width={x(b.b) - x(b.a)} height={innerH} className="band-fault" />
-                        <text x={x(b.a) + 4} y={pad.t + 12} className="band-label">
-                            장애 {b.name}
-                        </text>
-                    </g>
+                {bands.map((b, i) => (
+                    <rect key={`f${b.name}${b.start}`} x={x(b.a)} y={pad.t} width={x(b.b) - x(b.a)} height={innerH} className="band-fault">
+                        <title>{`${bandLabels[i].text} · ${clock(b.start)}~${b.end ? clock(b.end) : '진행 중'}`}</title>
+                    </rect>
+                ))}
+                {bands.map((b, i) => (
+                    <text key={`l${b.name}${b.start}`} x={bandLabels[i].lx} y={bandLabels[i].y} className="band-label">
+                        {bandLabels[i].text}
+                    </text>
                 ))}
                 {[0, 0.5, 1].map((f) => (
                     <g key={f}>
