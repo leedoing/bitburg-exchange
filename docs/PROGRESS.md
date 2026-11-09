@@ -20,6 +20,9 @@
 - [ ] (비용) EC2 리소스가 생긴 뒤 하루 지나면 Billing > Cost allocation tags에서 `Purpose` 태그를 활성화하면 데모 비용만 따로 볼 수 있습니다.
 - [ ] (6단계) 행사 날짜가 정해지면 `infra/terraform/variables.tf`의 `delete_after` 기본값(현재 `TBD-day-after-demo`)을 행사 다음 날로 바꾸고 `terraform apply` (태그만 바뀜).
 - [ ] (6단계) 행사 다음 날 `infra/teardown.sh` 실행.
+- [ ] (7단계) Bits AI SRE 자동 조사 켜기: API·Terraform으로는 켤 수 없습니다(문서 명시). [Bits Investigation > Monitors > Supported](https://hyunjin.datadoghq.com/bits-ai/monitors/supported)에서 `[Bitsburg]` 모니터 4개를 선택하고 Auto-Investigate All.
+- [ ] (7단계) Journey "신규 회원 첫 거래"에 단계 추가와 operation 연결: RUM > Journeys에서 kyc_approved·deposit_completed 단계를 넣고 operation 4개(signup, kyc_verification, krw_deposit, place_order)를 링크. API는 시작·종료 2단계만 받고 operation 연결 엔드포인트가 없습니다.
+- [ ] (7단계) Product Analytics 퍼널 저장: signup_completed → kyc_approved → deposit_completed → order_filled, Compare by `version`(그리고 `@context.campaign.id`). 저장 API가 없어 대시보드 퍼널 위젯으로 대신해 두었습니다.
 - [ ] (3단계) RUM > Sessions에서 Bitsburg Exchange 세션 하나를 열어 Session Replay가 실제로 재생되는지 눈으로 확인 (데이터상 `has_replay:true`는 확인됨).
 
 ## 단계 기록
@@ -224,3 +227,43 @@ MCP 검증 (`execute_code`: `HostsApi.listHosts`, `SpansApi.aggregateSpans host:
 | 퍼블릭 URL | `GET /` 200, `/api/demo/state` 정상, 토큰 없는 `/admin/state` 401 |
 
 참고: AWS 연동 때문에 같은 인스턴스가 `i-03821f4129b934d82`라는 호스트로도 한 줄 더 보입니다. Agent 데이터는 모두 `bitsburg-demo`로 들어옵니다.
+
+### 7단계. Datadog 설정
+
+- 시작: 2026-11-09 18:49 KST
+- 할 일: MCP로 메트릭·태그 확인 → Terraform(infra/datadog)으로 SLO 3개, 모니터 4개(한국어 메시지, team:bitsburg, env:demo-coinone), 백업 대시보드 "Bitsburg Business Overview", Sensitive Data Scanner 규칙(주민번호·휴대폰, service:bitsburg-kyc). API/MCP로 RUM retention filter 100%, RUM operation·Journey, Product Analytics 퍼널, Bits AI SRE 조사 대상 확인. 안 되는 것은 '사람이 할 일'로.
+- 종료: 2026-11-09 18:56 KST, **완료** (UI 전용 3건은 '사람이 할 일'로)
+
+결과
+- Terraform: `infra/datadog` (datadog provider 3.91, 로컬 state). `infra/datadog/tf.sh plan|apply`가 `.env`의 키를 환경 변수로만 넘깁니다.
+- 쿼리는 MCP로 실제 메트릭·태그를 확인해서 맞췄습니다. `rum.measure.operation`은 값이 1인 distribution이라 `sum:...as_count()`가 건수이고, `rum.measure.operation.duration`은 나노초, `trace.express.request`는 초 단위 distribution입니다. RUM 메트릭의 앱 버전 태그는 `version`, 백엔드 메트릭은 `app_version`입니다.
+- 3.5.0 KYC 실패율 모니터는 벤더 거절(`operation.failure_reason:other`)을 뺐습니다. 평시 3.5.0 KYC는 5분에 몇 건뿐이라 거절 1건만으로도 20%를 넘어 오탐(= Bits 조사 낭비)이 나기 때문입니다. 장애 시 늘어나는 타임아웃(error)과 사용자 포기(abandoned)만 셉니다.
+- krw_deposit SLO는 "성공 / 전체"입니다. 앱이 60초가 지나면 operation을 failure(other)로 끝내므로 성공이 곧 "60초 안에 완료"입니다.
+- Journey는 DEM Journeys API(`POST /api/v2/dem/journeys`)로 만들었습니다. API가 시작·종료 2단계만 받아서(3단계 이상은 400 "failed len validation") signup_completed → order_filled로 정의했고, 중간 단계와 operation 연결은 UI에서 합니다.
+- Product Analytics 퍼널 저장 API는 찾지 못했습니다. 대신 대시보드에 같은 4단계 RUM 퍼널 위젯을 넣었습니다.
+
+| 리소스 | ID / 링크 |
+| --- | --- |
+| 모니터 (1) 3.5.0 KYC 실패율 > 20% (5분) | 342560230 |
+| 모니터 (2) 입금 대기 pending_seconds > 45 | 342560226 |
+| 모니터 (3) bitsburg-order p95 > 1s | 342560231 |
+| 모니터 (4) cs.contact{topic:deposit} 이상치 | 342560227 |
+| SLO kyc_verification 성공률 95% (7d) | 436cc6753f3e528ab2d41c652f66b265 |
+| SLO krw_deposit 60초 내 완료 99% (7d) | 8c929933b694522483a1bebb6d1a4db5 |
+| SLO place_order p95 < 1s, time slice 5분, 99% (7d) | d173b34c23ca57548e9284ba5005dcfb |
+| 대시보드 Bitsburg Business Overview | https://hyunjin.datadoghq.com/dashboard/efb-z22-iqv |
+| RUM retention filter "Bitsburg Exchange 세션 100% (데모)" (리플레이·트레이스 100%) | 8075c698-dc31-4e67-be44-de23a59e5e70 |
+| Journey "신규 회원 첫 거래" | d94-wvb-kmd |
+| SDS 그룹 "Bitsburg KYC 개인정보" (service:bitsburg-kyc) + 규칙 주민등록번호·휴대폰 번호 | 794855dc-a66e-41d5-890b-28ef4df7d80b |
+
+MCP 검증 (`execute_code`: `MonitorsApi.listMonitors tags=team:bitsburg`, `ServiceLevelObjectivesApi.listSLOs`, `DashboardsApi.getDashboard`, `LogsApi.listLogs`, MCP `search_rum_retention_filters`·`search_rum_operations`)
+
+| 확인 항목 | 결과 |
+| --- | --- |
+| 모니터 4개 | 생성, 전부 OK, 각각 service 태그 (Bits 조사 시 서비스 연결용) |
+| SLO 3개 | 생성 (metric 2, time_slice 1) |
+| 대시보드 | 그룹 3개(퍼널, KYC 버전별, 거래·입금), 장애 Event 오버레이 `service:bitsburg-admin` |
+| RUM operation | SDK operation 4개(signup, kyc_verification, krw_deposit, place_order) 확인 |
+| retention filter | 기본 Sessions 100% + 데모 전용 필터 100% |
+| SDS 마스킹 | 규칙 생성(09:54 UTC) 후 kyc 로그 `applicant_note` = "주민번호 [주민번호 마스킹] 연락처 [휴대폰 마스킹]", 이후 미마스킹 0건 |
+| Terraform 드리프트 | 재 plan "No changes" |
