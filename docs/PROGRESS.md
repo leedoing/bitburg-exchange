@@ -24,6 +24,9 @@
 - [ ] (7단계) Journey "신규 회원 첫 거래"에 단계 추가와 operation 연결: RUM > Journeys에서 kyc_approved·deposit_completed 단계를 넣고 operation 4개(signup, kyc_verification, krw_deposit, place_order)를 링크. API는 시작·종료 2단계만 받고 operation 연결 엔드포인트가 없습니다.
 - [ ] (7단계) Product Analytics 퍼널 저장: signup_completed → kyc_approved → deposit_completed → order_filled, Compare by `version`(그리고 `@context.campaign.id`). 저장 API가 없어 대시보드 퍼널 위젯으로 대신해 두었습니다.
 - [ ] (3단계) RUM > Sessions에서 Bitsburg Exchange 세션 하나를 열어 Session Replay가 실제로 재생되는지 눈으로 확인 (데이터상 `has_replay:true`는 확인됨).
+- [ ] (9단계) Datadog에서 [Bitsburg Pulse](https://hyunjin.datadoghq.com/app-builder/apps/93c2badc-45cf-4c9d-aeba-1b87e70a0f81)를 한 번 열어 6개 탭이 보이는지 확인. 발표를 다른 계정으로 한다면 App Builder에서 앱 권한(Viewer)과 Connection `bitsburg-admin-api` 사용 권한을 그 계정에 주세요. Connection 생성 응답에 `acting_user_can_resolve:false`가 있었는데, 업로드한 계정(앱 키 소유자)으로는 클라우드 경로에서 컨트롤 탭이 정상 동작했습니다.
+- [ ] (9단계, 선택) 대시보드에 앱 넣기: Bitsburg Business Overview 편집 > 위젯 추가 > Apps > Bitsburg Pulse. 대시보드 위젯 추가 API는 앱 위젯 스키마가 문서화돼 있지 않아 하지 않았습니다.
+- [ ] (9단계) 발표 슬라이드용 "KYC 장애" 상황판 캡처는 리허설 때 다시 찍으세요 (`apps/bitsburg-pulse/scripts/screenshots.cjs`). 지금 `docs/screenshots/*-fault.png`는 장애가 끝난 뒤 장애 구간을 찍은 것입니다.
 
 ## 단계 기록
 
@@ -267,3 +270,59 @@ MCP 검증 (`execute_code`: `MonitorsApi.listMonitors tags=team:bitsburg`, `Serv
 | retention filter | 기본 Sessions 100% + 데모 전용 필터 100% |
 | SDS 마스킹 | 규칙 생성(09:54 UTC) 후 kyc 로그 `applicant_note` = "주민번호 [주민번호 마스킹] 연락처 [휴대폰 마스킹]", 이후 미마스킹 0건 |
 | Terraform 드리프트 | 재 plan "No changes" |
+
+### 9단계. Datadog App "Bitsburg Pulse"
+
+- 시작: 2026-11-09 18:57 KST
+- 할 일: `npm create @datadog/apps` 스캐폴드(apps/bitsburg-pulse, vite-react), 백엔드 함수(Action Catalog만 사용)로 메트릭·RUM·Event·모니터 조회와 admin API 호출, 탭 6개(상황판·운영·CS·PM·DA·캠페인·경영 요약·시나리오 컨트롤), hash 딥링크와 기간 토글, 30초 새로고침, 로컬 dev에서 실데이터로 렌더 확인과 캡처, 컨트롤 탭으로 장애 켜서 신호등 변화 확인, `npm run upload`, MCP 검증. 수치 검증은 사용자 요청대로 하루 뒤 따로.
+- 종료: 2026-11-09 21:05 KST, **완료** (렌더·업로드까지. 수치 검증은 다음 날)
+
+결과
+- 앱: **https://hyunjin.datadoghq.com/app-builder/apps/93c2badc-45cf-4c9d-aeba-1b87e70a0f81** (게시 버전 `2cde627fe8de1d3f`, 태그 `team:bitsburg`, `env:demo-coinone`, `surface:datadog.dashboard`). 다시 올릴 때는 `apps/bitsburg-pulse`에서 `.env`를 환경 변수로 읽고 `npm run upload` (README 참고). `datadog-app.config.json`의 `id`는 바꾸면 안 됩니다.
+- 딥링크: `#/situation|ops|pm|campaign|exec|control?range=1h|6h|24h|fault`. `fault`는 마지막 장애 Event 15분 전 ~ 종료 10분 뒤입니다.
+- 데이터 출처: `dd/metrics`(queryScalarData·queryTimeseriesData, 메트릭과 RUM), `dd/events`(listEvents), `dd/monitor`(listMonitorsV2), `dd/rum`(listRUMEvents), `http/http`(admin API, Connection `bitsburg-admin-api` = 4b2edd33-a2c2-4296-8f50-ee0798bd4b55). `fetch`는 쓰지 않았습니다.
+- PM 퍼널은 "같은 세션" 기준입니다. RUM 집계로 세션 수만 세면 기존 회원의 주문까지 섞여 첫 주문 전환율이 432%처럼 나와서, 단계별 세션 ID 집합을 받아 가입 세션과 교집합으로 셉니다.
+- 평균 첫 입금액·평균 주문액은 RUM 액션 금액 평균(1억 초과 제외)을 씁니다. 아래 이상치 때문에 백엔드 분포 메트릭 평균이 ₩62억으로 튀었습니다.
+- 캡처: `docs/screenshots/pulse-<탭>-1h.png`, `pulse-<탭>-fault.png` (1440×900 @2x). 다시 찍기: dev 서버를 띄우고 `node scripts/screenshots.cjs [url] [폴더] [range]`.
+- 장애 테스트: 컨트롤 탭에서 확인 모달로 `kyc_vendor_slow`(intensity 0.7, 5분)를 켰습니다(`scripts/toggle-fault.cjs`). 시작 Event 11:49:05 UTC, 자동 해제 Event 11:54:25 UTC. 상황판 KYC 신호등은 50초 시점엔 정상, 3분 20초 시점엔 **장애**(3.5.0 평균 대기 11.3초, 3.4.2 1.7초)였습니다. 그 사이는 재 보지 않아 "2분 안" 여부는 다음 날 리허설에서 확인이 필요합니다.
+
+수정한 문제
+- 실제 사람이 웹(http://43.202.19.36)에서 주문 금액 칸에 0을 계속 눌러 **주문 3경 원(3×10^16)과 입금 1조 원**이 한 번씩 들어갔습니다(u_001157, 11:46 UTC). 웹 입력을 1억 원으로 막고(Trade·Deposit), order·wallet 서비스도 1억 초과면 400 `invalid_amount`를 돌려주게 해서 EC2에 재배포했습니다(커밋 688a6fb). 확인: 3경 원 주문 400, 30만 원 주문 200. 이미 들어간 두 건은 지울 수 없어서 **11/10 20:47 KST까지** 24시간 합계(경영 요약 거래대금·첫 입금액, 상황판 24시간 거래대금)가 튑니다.
+- RUM 집계 쿼리 이름에 공백이 있으면 400이라 내부 이름을 `q0..`로 바꿨습니다. `listMonitors` 응답이 배열이 아니어서 `listMonitorsV2`로 바꿨습니다. DRUIDS `ProminentTabList`가 두 번째 탭 선택 때 오버플로 메뉴로 접혀서 직접 만든 탭 바로 바꿨습니다.
+
+MCP 검증 (`execute_code`: `EventsApi.listEvents sources=bitsburg-admin`, `MetricsApi.queryScalarData`·`queryTimeseriesData` bitsburg.kyc.*, `MonitorsApi.getMonitor 342560230`) + API `GET /api/v2/app-builder/apps/{id}`
+
+| 확인 항목 | 결과 |
+| --- | --- |
+| 앱 게시 | 200, name Bitsburg Pulse, 태그 3개, deployment 11:58:21 UTC |
+| 클라우드 경로 렌더 (`npm run dev:verify`) | 6개 탭 모두 오류 없이 렌더, 컨트롤 탭이 Connection 거쳐 admin 상태 조회 성공 |
+| 장애 Event | 시작 11:49:05, 종료 11:54:25 (5분 자동 해제) |
+| kyc v2 대기 (분 단위) | 11:46 1.7초, 11:47 1.0초, 11:48 2.7초, **11:49 20.0초(타임아웃, failed)** |
+| 장애 중 표본 | 11:50~11:54 사이에는 v1·v2 모두 KYC 요청이 거의 없었습니다(로그 기준 11:50:18 이후 11:54:57까지 0건, 11:53~11:54는 재배포). 표본이 작아 KYC 모니터(342560230)는 OK 유지 |
+| 화면 수치 | 상황판 4단계·타일, PM 퍼널(같은 세션), 추정 손실 ₩400만(장애 구간), 경영 요약 카드 ₩81만, 캠페인 6개 차트 모두 현재 데이터로 그려짐 |
+
+## 최종 요약 (2026-11-09 21:05 KST)
+
+0~7단계와 9단계를 마쳤습니다. 8단계(데이터 점검)는 요청대로 하지 않았고 아래 "다음 날 확인할 것"에 넣었습니다.
+
+| 항목 | 값 |
+| --- | --- |
+| 웹 | http://43.202.19.36 (EC2 `i-03821f4129b934d82`, baseline 트래픽 10명 상시) |
+| Datadog App | https://hyunjin.datadoghq.com/app-builder/apps/93c2badc-45cf-4c9d-aeba-1b87e70a0f81 |
+| 백업 대시보드 | https://hyunjin.datadoghq.com/dashboard/efb-z22-iqv |
+| 저장소 | https://github.com/leedoing/bitburg-exchange (main) |
+
+만든 리소스
+- AWS (ap-northeast-2, 전부 `Purpose=coinone-abm-demo`): VPC·서브넷·IGW·라우트 테이블, 보안 그룹 `bitsburg-demo-web`(80), IAM 역할·인스턴스 프로파일 `bitsburg-demo-ec2`, S3 `bitsburg-demo-artifacts-557652101750`, EC2 t3.medium, EIP 43.202.19.36, SSM 파라미터 `/bitsburg-demo/*` 5개, Budget `bitsburg-demo-monthly-50usd`. 예상 월 약 44달러.
+- Datadog: RUM 앱 Bitsburg Exchange, 모니터 4개(342560230·342560226·342560231·342560227), SLO 3개, 대시보드 efb-z22-iqv, RUM retention filter 8075c698…, Journey d94-wvb-kmd, SDS 그룹 794855dc…, HTTP Connection `bitsburg-admin-api` 4b2edd33…, Datadog App Bitsburg Pulse 93c2badc….
+- 정리: 행사 다음 날 `infra/teardown.sh`(AWS)와 `infra/datadog/tf.sh destroy`(Datadog Terraform 리소스). retention filter·Journey·Connection·App은 Terraform 밖이라 따로 지워야 합니다. 삭제는 모두 사람 확인 후.
+
+사람이 할 일: 위 "사람이 할 일" 목록 그대로입니다 (Bits 자동 조사 켜기, Journey 중간 단계·operation 연결, PA 퍼널 저장, 리플레이 재생 눈 확인, 앱 열어 보기와 권한, 대시보드에 앱 넣기(선택), 장애 캡처 다시 찍기, delete_after 태그, Cost allocation tag, teardown).
+
+다음 날 확인할 것
+1. **11/10 20:47 KST 이후에** 숫자를 보세요. 그 전까지는 이상치 두 건 때문에 24시간 거래대금·입금액 합계가 3경·1조 단위로 나옵니다.
+2. 8단계 A 데이터 점검: 버전별 퍼널이 스펙(가입→KYC 80%, KYC→첫 입금 65%)에 가까운지, 3.5.0만 KYC에서 꺾이는지, 세션이 수백 개 쌓였을 때 Pulse PM 탭 퍼널과 대시보드 퍼널 위젯 값이 비슷한지.
+3. 장애 리허설: `kyc_vendor_slow`를 10분 이상 켜고 (a) 상황판 KYC가 2분 안에 장애로 바뀌는지, (b) 모니터 342560230이 울리는지, (c) PM 추정 손실이 오르는지. `deposit_delay`(입금 대기 45초 모니터, CS 이상치), `listing_spike`(traffic-gen listing_spike 모드와 함께, 주문 p95 모니터·캠페인 탭)도 같은 방식.
+4. SDS: 새 kyc 로그에 주민번호·휴대폰이 계속 마스킹되는지.
+5. SLO 3개에 하루치 값이 쌓였는지, CS 이상치 모니터(342560227)의 기준선이 생겼는지(anomaly는 학습 기간 필요).
+6. Bits Chat 질문 3개(운영·CS 탭의 복사 카드) 답변 품질.

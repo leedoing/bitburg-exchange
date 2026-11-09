@@ -1,0 +1,8 @@
+{
+  "$schema": "https://unpkg.com/@datadog/create-apps/dist/datadog-app.config.schema.json",
+  "datadogSite": "datadoghq.com",
+  "id": "93c2badc-45cf-4c9d-aeba-1b87e70a0f81",
+  "name": "Bitsburg Pulse",
+  "description": "Bitsburg 신규 회원 퍼널(가입→KYC→첫 입금→첫 주문) 신호등, 부서별 탭(운영·CS, PM·DA, 캠페인, 경영 요약)과 발표자용 장애 시나리오 컨트롤",
+  "tags": ["team:bitsburg", "env:demo-coinone", "surface:datadog.dashboard"]
+}
