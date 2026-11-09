@@ -23,6 +23,10 @@ x-dd-env: &dd-env
   DD_LOGS_INJECTION: "true"
   DD_RUNTIME_METRICS_ENABLED: "true"
   DD_TRACE_STARTUP_LOGS: "false"
+  DD_TRACE_MIDDLEWARE_TRACING_ENABLED: "false"
+  DD_TRACE_DNS_ENABLED: "false"
+  DD_TRACE_NET_ENABLED: "false"
+  DD_TRACE_SAMPLING_RULES: '[{"resource":"GET /healthz","sample_rate":0},{"resource":"SELECT key, value FROM demo_state*","sample_rate":0},{"resource":"SELECT COALESCE*","sample_rate":0}]'
   DD_TAGS: team:bitsburg
   PORT: "3000"
   DATABASE_URL: postgres://bitsburg:bitsburg@postgres:5432/bitsburg
