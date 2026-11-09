@@ -893,3 +893,62 @@ a.reason-link {
 .legend .legend-link:hover {
     color: var(--accent);
 }
+
+/* Drag-to-zoom on charts */
+.chart-zoom svg {
+    cursor: crosshair;
+    user-select: none;
+    touch-action: pan-y;
+}
+.chart-zoom .zoom-sel {
+    fill: rgba(124, 92, 255, 0.18);
+    stroke: var(--accent);
+    stroke-dasharray: 4 3;
+    pointer-events: none;
+}
+.chart-zoom .zoom-label {
+    font-size: 11px;
+    fill: var(--accent);
+    font-weight: 600;
+    pointer-events: none;
+}
+.zoom-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 4px 3px 10px;
+    border: 1px solid var(--accent);
+    border-radius: 999px;
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 600;
+}
+.zoom-chip button {
+    border: 0;
+    background: var(--accent);
+    color: #fff;
+    border-radius: 999px;
+    padding: 1px 8px;
+    font: inherit;
+    cursor: pointer;
+}
+
+/* Campaign: server resources */
+.infra-verdict {
+    margin: 0 0 12px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 14px;
+}
+.infra-verdict.ok {
+    background: rgba(46, 160, 67, 0.1);
+    color: #1a7f37;
+}
+.infra-verdict.warn {
+    background: rgba(240, 136, 62, 0.12);
+    color: #b35900;
+}
+.infra-verdict.bad {
+    background: rgba(229, 72, 77, 0.12);
+    color: #c62828;
+}

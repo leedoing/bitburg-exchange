@@ -14,6 +14,17 @@ export function rumUrl(query: string, w: Window): string {
     return `${DD_APP_URL}/rum/sessions?query=${encodeURIComponent(q)}&from_ts=${Math.floor(w.from)}&to_ts=${Math.ceil(w.to)}&live=false`;
 }
 
+/** Log Explorer over `w` (env is added). */
+export function logsUrl(query: string, w: Window): string {
+    const q = `env:${ENV} ${query}`.trim();
+    return `${DD_APP_URL}/logs?query=${encodeURIComponent(q)}&from_ts=${Math.floor(w.from)}&to_ts=${Math.ceil(w.to)}&live=false`;
+}
+
+/** Infrastructure > Containers on the demo host over `w`. */
+export function containersUrl(w: Window): string {
+    return `${DD_APP_URL}/containers?query=${encodeURIComponent('host:bitsburg-demo')}&from_ts=${Math.floor(w.from)}&to_ts=${Math.ceil(w.to)}&live=false`;
+}
+
 export const action = (...names: string[]) => `@type:action @action.name:${names.length > 1 ? `(${names.join(' OR ')})` : names[0]}`;
 
 /** Quote values that contain characters the RUM search grammar treats specially. */

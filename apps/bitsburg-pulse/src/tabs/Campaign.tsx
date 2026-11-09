@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 
 import { getCampaign } from '../pulse.backend';
-import type { RangeKey, Series } from '../shared/types';
-import { RUM, rumUrl } from '../shared/links';
+import type { CampaignData, RangeKey, Series } from '../shared/types';
+import { containersUrl, logsUrl, RUM, rumUrl } from '../shared/links';
 import { Chart, type ChartLink } from '../ui/Chart';
 import { count, krw, ratio } from '../ui/format';
 import { Card, ErrorBox, Loading, Tile } from '../ui/parts';
@@ -25,6 +25,66 @@ function relabel(series: Series[]): Series[] {
         out.set(label, prev ? { label, points: prev.points.map(([t, v], i) => [t, v + (s.points[i]?.[1] ?? 0)]) } : { label, points: s.points });
     }
     return [...out.values()];
+}
+
+const POOL_LOG = 'service:bitsburg-order "Order DB pool exhausted"';
+/** Host CPU or memory at or above these levels is shown as 주의 / 위험. */
+const WARN_PCT = 70;
+const BAD_PCT = 85;
+
+const peak = (series: Series[], label?: string) =>
+    Math.max(0, ...series.filter((s) => !label || s.label === label).flatMap((s) => s.points.map((p) => p[1])));
+const total = (series: Series[]) => series.reduce((n, s) => n + s.points.reduce((m, p) => m + p[1], 0), 0);
+const pctFmt = (v: number) => `${Math.round(v)}%`;
+
+function Infra({ infra, d }: { infra: CampaignData['infra']; d: CampaignData }) {
+    const w = d.range.window;
+    const cpu = peak(infra.host, '호스트 CPU');
+    const mem = peak(infra.host, '호스트 메모리');
+    const pool = Math.round(total(infra.poolWarn));
+    const top = [...infra.cpu].sort((a, b) => peak([b]) - peak([a]))[0];
+    const worst = Math.max(cpu, mem);
+    const level = worst >= BAD_PCT ? 'bad' : worst >= WARN_PCT ? 'warn' : 'ok';
+    const head = `CPU 최대 ${pctFmt(cpu)}, 메모리 최대 ${pctFmt(mem)}`;
+    const verdict =
+        level === 'bad'
+            ? `${head}로 ${BAD_PCT}%를 넘었습니다. 리소스가 병목일 수 있습니다.`
+            : level === 'warn'
+              ? `${head}로 ${WARN_PCT}%를 넘었습니다. 상장 트래픽이 더 늘면 증설이 필요합니다.`
+              : pool > 0
+                ? `${head}로 여유가 있습니다. 주문 지연·실패는 서버 자원이 아니라 주문 DB 커넥션 풀 고갈(경고 로그 ${count(pool)}건) 때문입니다.`
+                : `${head}로 여유가 있습니다. 이 구간 트래픽은 증설 없이 감당합니다.`;
+    const hostLink: ChartLink = (_, bw) => containersUrl(bw);
+    return (
+        <Card title={`서버 리소스 (EC2 bitsburg-demo, ${d.range.label})`} extra={<span className="muted">t3.medium · 2 vCPU · 4GB</span>}>
+            <div className={`infra-verdict ${level}`}>
+                {verdict}
+                {top && peak([top]) > 0 && <span className="muted small"> 서비스 중 CPU 최대는 {top.label} ({pctFmt(peak([top]))} of 1 vCPU).</span>}
+            </div>
+            <div className="grid-2">
+                <div>
+                    <h4>호스트 CPU·메모리 사용률 (%)</h4>
+                    <Chart series={infra.host} window={w} faults={d.windows} height={150} format={pctFmt} threshold={{ value: WARN_PCT, label: `주의 ${WARN_PCT}%` }} link={hostLink} linkTarget="Containers" />
+                </div>
+                <div>
+                    <h4>주문 DB 풀 고갈 경고 (로그 건수)</h4>
+                    <Chart series={infra.poolWarn} window={w} faults={d.windows} kind="bar" height={150} empty="이 구간에 DB 풀 고갈 경고가 없습니다" link={(_, bw) => logsUrl(POOL_LOG, bw)} linkTarget="Log Explorer" />
+                </div>
+                <div>
+                    <h4>서비스별 CPU (1 vCPU 대비 %)</h4>
+                    <Chart series={infra.cpu} window={w} faults={d.windows} height={150} format={pctFmt} link={hostLink} linkTarget="Containers" />
+                </div>
+                <div>
+                    <h4>서비스별 메모리 (MB)</h4>
+                    <Chart series={infra.mem} window={w} faults={d.windows} height={150} format={(v) => `${Math.round(v)}`} link={hostLink} linkTarget="Containers" />
+                </div>
+            </div>
+            <div className="muted small">
+                호스트 수치에는 같은 EC2에서 도는 트래픽 생성기(headless Chrome)와 Pulse 컨테이너도 포함됩니다. 서비스별 그래프는 주문 경로(api-gateway → order →
+                matching, 주문 DB)만 보여 줍니다. 그래프를 누르면 Datadog Containers·Log Explorer가 열립니다.
+            </div>
+        </Card>
+    );
 }
 
 export function Campaign({ range }: { range: RangeKey }) {
@@ -71,6 +131,7 @@ export function Campaign({ range }: { range: RangeKey }) {
                     </div>
                 </div>
             </Card>
+            <Infra infra={d.infra} d={d} />
         </div>
     );
 }

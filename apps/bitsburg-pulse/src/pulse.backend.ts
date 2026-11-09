@@ -24,15 +24,16 @@ import type {
     OpsData,
     PmData,
     RangeKey,
+    Series,
     SituationData,
     StageSignal,
     Window,
 } from './shared/types';
+import { asRangeKey } from './shared/types';
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
-const RANGES: RangeKey[] = ['1h', '6h', '24h', 'fault'];
-const asRange = (r: unknown): RangeKey => (RANGES.includes(r as RangeKey) ? (r as RangeKey) : '1h');
+const asRange = (r: unknown): RangeKey => asRangeKey(r);
 
 const e = `env:${ENV}`;
 
@@ -257,10 +258,35 @@ export async function getPm(rangeKey: string): Promise<PmData> {
 }
 
 // ------------------------------------------------------------------ 캠페인
+/** DD_HOSTNAME of the EC2 demo host (infra/host/bitsburg-deploy.sh). */
+const INFRA_HOST = 'bitsburg-demo';
+/** Containers on the order path, labelled with their DATA_SPEC service names. traffic-gen and pulse are left out. */
+const ORDER_PATH_CONTAINERS: Record<string, string> = {
+    'bitsburg-api-gateway-1': 'bitsburg-api-gateway',
+    'bitsburg-order-1': 'bitsburg-order',
+    'bitsburg-matching-engine-1': 'bitsburg-matching',
+    'bitsburg-postgres-1': 'postgres (주문 DB)',
+};
+const orderPath = (series: Series[]) =>
+    series.filter((s) => ORDER_PATH_CONTAINERS[s.label]).map((s) => ({ ...s, label: ORDER_PATH_CONTAINERS[s.label] }));
+
+async function infraSeries(w: Window): Promise<CampaignData['infra']> {
+    const h = `host:${INFRA_HOST}`;
+    const [cpu, mem, cCpu, cMem, poolWarn] = await Promise.all([
+        timeseries({ u: m(`avg:system.cpu.user{${h}}`), s: m(`avg:system.cpu.system{${h}}`) }, w, { formula: 'u + s', label: '호스트 CPU' }),
+        timeseries({ p: m(`avg:system.mem.pct_usable{${h}}`) }, w, { formula: '100 * (1 - p)', label: '호스트 메모리' }),
+        // container.cpu.usage is nanocores: 1e7 = 1% of one vCPU.
+        timeseries({ c: m(`sum:container.cpu.usage{${h}} by {container_name}`) }, w, { formula: 'c / 10000000', label: 'CPU' }),
+        timeseries({ c: m(`sum:container.memory.usage{${h}} by {container_name}`) }, w, { formula: 'c / 1048576', label: '메모리' }),
+        timeseries({ 'DB 풀 고갈 경고': { kind: 'logs', query: `${e} service:bitsburg-order "Order DB pool exhausted"`, aggregation: 'count' } }, w),
+    ]);
+    return { host: [...cpu, ...mem], cpu: orderPath(cCpu), mem: orderPath(cMem), poolWarn };
+}
+
 export async function getCampaign(rangeKey: string): Promise<CampaignData> {
     const ctx = await loadContext(asRange(rangeKey));
     const w = ctx.range.window;
-    const [sess, signups, orders, orderKrw, orderP95, orderFailRate, totSess, totOrders, totKrw] = await Promise.all([
+    const [sess, signups, orders, orderKrw, orderP95, orderFailRate, totSess, totOrders, totKrw, infra] = await Promise.all([
         timeseries({ s: sessions('@type:session', '@context.campaign.id') }, w),
         timeseries({ s: m(`sum:bitsburg.signup.completed{${e}} by {campaign}.as_count()`) }, w),
         timeseries({ s: m(`sum:bitsburg.order.filled{${e}} by {campaign}.as_count()`) }, w),
@@ -274,6 +300,7 @@ export async function getCampaign(rangeKey: string): Promise<CampaignData> {
         grouped(sessions('@type:session', '@context.campaign.id'), w),
         grouped(m(`sum:bitsburg.order.filled{${e}} by {campaign}.as_count()`), w),
         grouped(krwSum('order', '@campaign.id'), w),
+        infraSeries(w),
     ]);
     const isCampaign = (k: string) => k !== 'none' && k !== 'N/A' && k !== 'all' && k !== '';
     const split = (rec: Record<string, number>) =>
@@ -297,6 +324,7 @@ export async function getCampaign(rangeKey: string): Promise<CampaignData> {
         orderKrw,
         orderP95,
         orderFailRate,
+        infra,
         totals: {
             campaign: { sessions: s.c, orders: o.c, krw: k.c },
             normal: { sessions: s.n, orders: o.n, krw: k.n },

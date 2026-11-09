@@ -439,6 +439,35 @@ MCP 검증 (`execute_code` `MetricsApi.queryScalarData`, `aggregate_rum_events`)
 
 알아 둘 점: URL만 알면 누구나 Pulse 데이터(이 org의 데모 데이터)를 보고 장애 스위치를 켤 수 있습니다. 행사 후 `infra/pulse-key.sh revoke`를 실행하면 Pulse가 바로 데이터를 못 읽게 됩니다.
 
+### 9단계 추가: 캠페인 탭 서버 리소스, 그래프 드래그 줌 (2026-11-10 03:10 KST)
+
+사용자 요청: 고객이 PUPS 상장 때 서버 CPU·메모리 사용률이 적절한지 같이 보고 싶어 하니 캠페인 탭에 넣기. 그리고 그래프를 드래그하면 그 시간대로 좁혀지는 기능.
+
+변경
+- 캠페인 탭에 "서버 리소스 (EC2 bitsburg-demo)" 카드를 추가했습니다.
+  - 호스트 CPU(`system.cpu.user + system.cpu.system`)와 메모리(`100 × (1 − system.mem.pct_usable)`)를 `host:bitsburg-demo`로 봅니다.
+  - 주문 경로 컨테이너(api-gateway, order, matching-engine, postgres)별 CPU(`container.cpu.usage`, 1 vCPU 대비 %)와 메모리(`container.memory.usage`, MB)를 보여 줍니다. traffic-gen과 pulse 컨테이너는 뺐습니다.
+  - 주문 DB 풀 고갈 경고 로그(`service:bitsburg-order "Order DB pool exhausted"`) 건수도 보여 줍니다.
+  - 판정 문구는 최대 사용률 70% 이상이면 주의, 85% 이상이면 위험입니다. 여유가 있는데 풀 경고가 있으면 원인을 DB 커넥션 풀로 짚습니다.
+  - 그래프를 누르면 Containers(호스트·서비스)나 Log Explorer(풀 경고)가 열립니다.
+- 모든 그래프에 드래그 줌을 넣었습니다(`ZoomContext`, `Chart`).
+  - 가로로 드래그하면 `range=c<시작ms>-<끝ms>`로 바뀌어 모든 탭이 그 구간을 씁니다. 최소 2분, 최대 7일입니다.
+  - 상단 칩에 선택 구간이 보이고, "✕ 해제"를 누르면 직전 프리셋으로 돌아갑니다. 브라우저 뒤로 가기도 됩니다.
+  - 짧게 누르면 예전처럼 RUM Explorer가 열립니다. 30분 이하 구간은 30초 간격으로 그립니다.
+  - 백엔드(`asRangeKey`, `resolveRange`)는 이 키를 검증하고, 끝 시각은 현재 시각으로 자릅니다. 24시간보다 오래된 구간을 골라도 장애 띠가 보이도록 Event를 더 앞에서부터 읽습니다.
+
+검증
+
+| 확인 항목 | 결과 |
+| --- | --- |
+| 메트릭 존재 (MCP `get_datadog_metric`, 11/10 00:50~01:40 KST) | `system.cpu.*` 약 21%, `system.mem.pct_usable` 0.49, `container.cpu.usage`·`container.memory.usage` 컨테이너 13개 |
+| 캠페인 탭, 상장 장애 구간 00:55~01:30 | CPU 최대 26%, 메모리 최대 52%로 "여유" 판정. 서비스별 CPU는 모두 1 vCPU의 2% 이하 |
+| DB 풀 고갈 경고 (MCP `analyze_datadog_logs`, 같은 구간) | 0건. 풀은 10 → 3으로 줄었지만 트래픽이 평시 수준(체결 127건)이라 고갈까지 가지 않았음 |
+| 드래그 줌 (Playwright) | 상황판 그래프 드래그 → `range=c…`, 제목·타일 "선택 구간 02:20~02:40", 막대 클릭은 RUM Explorer 열림, "✕ 해제" → `range=1h` |
+| 선택 구간으로 탭 6개 | 오류 없음 |
+
+알아 둘 점: 상장 장애 때 리소스 그래프에 변화를 보여 주려면 traffic-gen `listing_spike` 모드를 같이 켜야 합니다. 그러면 주문이 늘어 DB 풀 경고가 나고, 판정 문구가 "자원은 여유, 원인은 DB 커넥션 풀"로 바뀝니다. 호스트 CPU에는 같은 EC2의 traffic-gen(headless Chrome)도 들어갑니다.
+
 ## 최종 요약 (2026-11-09 21:05 KST)
 
 0~7단계와 9단계를 마쳤습니다. 8단계(데이터 점검)는 요청대로 하지 않았고 아래 "다음 날 확인할 것"에 넣었습니다.

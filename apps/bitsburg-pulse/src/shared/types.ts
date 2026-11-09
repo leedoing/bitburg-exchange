@@ -1,4 +1,26 @@
-export type RangeKey = '1h' | '6h' | '24h' | 'fault';
+export type PresetRange = '1h' | '6h' | '24h' | 'fault';
+/** Window picked by dragging on a chart: `c<fromMs>-<toMs>`. */
+export type CustomRange = `c${number}-${number}`;
+export type RangeKey = PresetRange | CustomRange;
+
+export const PRESET_RANGES: readonly PresetRange[] = ['1h', '6h', '24h', 'fault'];
+export const MIN_ZOOM_MS = 2 * 60_000;
+const MAX_ZOOM_MS = 7 * 24 * 60 * 60_000;
+
+export const customRange = (w: Window): CustomRange => `c${Math.round(w.from)}-${Math.round(w.to)}`;
+
+export function parseCustomRange(key: string): Window | null {
+    const m = /^c(\d{13})-(\d{13})$/.exec(key);
+    if (!m) return null;
+    const from = Number(m[1]);
+    const to = Number(m[2]);
+    return to - from >= MIN_ZOOM_MS && to - from <= MAX_ZOOM_MS ? { from, to } : null;
+}
+
+export function asRangeKey(v: unknown, fallback: PresetRange = '1h'): RangeKey {
+    if (PRESET_RANGES.includes(v as PresetRange)) return v as PresetRange;
+    return typeof v === 'string' && parseCustomRange(v) ? (v as CustomRange) : fallback;
+}
 
 export type Level = 'ok' | 'warn' | 'bad' | 'idle';
 
@@ -103,6 +125,8 @@ export type CampaignData = {
     orderKrw: Series[];
     orderP95: Series[];
     orderFailRate: Series[];
+    /** EC2 host and the containers on the listing path (api-gateway, order, matching, postgres). */
+    infra: { host: Series[]; cpu: Series[]; mem: Series[]; poolWarn: Series[] };
     totals: { campaign: { sessions: number; orders: number; krw: number }; normal: { sessions: number; orders: number; krw: number } };
 };
 

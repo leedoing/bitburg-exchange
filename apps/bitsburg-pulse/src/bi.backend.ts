@@ -1,6 +1,7 @@
 import { funnel, paths, stepLabels } from './server/bi';
 import { grouped, loadContext, MAX_KRW, RUM_BASE } from './server/dd';
 import {
+    asRangeKey,
     BI_DIMS,
     BI_MODES,
     BI_VIEWS,
@@ -10,14 +11,12 @@ import {
     type BiMode,
     type BiPathsData,
     type BiView,
-    type RangeKey,
 } from './shared/types';
 
-const RANGES: RangeKey[] = ['1h', '6h', '24h', 'fault'];
 const pick = <T extends string>(allowed: readonly T[], v: unknown, fallback: T): T => (allowed.includes(v as T) ? (v as T) : fallback);
 
 export async function getBiFunnel(rangeKey: string, modeKey: string, dimKey: string): Promise<BiFunnelData> {
-    const range = pick(RANGES, rangeKey, '6h');
+    const range = asRangeKey(rangeKey, '6h');
     const mode: BiMode = pick(BI_MODES, modeKey, 'action');
     const dim: BiDim = pick(BI_DIMS, dimKey, 'version');
     const ctx = await loadContext(range);
@@ -57,7 +56,7 @@ export async function getBiFunnel(rangeKey: string, modeKey: string, dimKey: str
 }
 
 export async function getBiPaths(rangeKey: string, viewKey: string, directionKey: string): Promise<BiPathsData> {
-    const range = pick(RANGES, rangeKey, '6h');
+    const range = asRangeKey(rangeKey, '6h');
     const view: BiView = pick(BI_VIEWS, viewKey, 'home');
     const direction: BiDirection = directionKey === 'before' ? 'before' : 'after';
     const ctx = await loadContext(range);

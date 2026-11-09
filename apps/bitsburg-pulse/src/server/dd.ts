@@ -5,7 +5,7 @@ import { listMonitorsV2 } from '@datadog/action-catalog/dd/monitor';
 import { listRUMEvents } from '@datadog/action-catalog/dd/rum';
 
 import { DD_APP_URL, ENV, RUM_APP_ID } from '../shared/links';
-import type { FaultWindow, RangeKey, ResolvedRange, Series, TimelineEvent, Window } from '../shared/types';
+import { parseCustomRange, type FaultWindow, type RangeKey, type ResolvedRange, type Series, type TimelineEvent, type Window } from '../shared/types';
 
 export { ENV, RUM_APP_ID };
 export const APP_URL = DD_APP_URL;
@@ -21,9 +21,9 @@ const START_RE = /^\[Bitsburg\] (장애 주입|캠페인) 시작: (\S+)$/;
 const END_RE = /^\[Bitsburg\] (장애 주입|캠페인) 종료: (\S+)$/;
 const KNOWN = new Set(['kyc_vendor_slow', 'deposit_delay', 'listing_spike', 'listing_pups', 'promo_deposit_bonus']);
 
-export async function getTimeline(now: number): Promise<TimelineEvent[]> {
+export async function getTimeline(now: number, from = now - 24 * HOUR): Promise<TimelineEvent[]> {
     const res = await listEvents({
-        inputs: { time: { from: iso(now - 24 * HOUR), to: iso(now) }, tags: 'source:bitsburg-admin' },
+        inputs: { time: { from: iso(from), to: iso(now) }, tags: 'source:bitsburg-admin' },
     });
     const events = (res as { events?: { title?: string; date_happened?: number; alert_type?: string }[] }).events ?? [];
     return events
@@ -64,7 +64,23 @@ export function faultWindows(timeline: TimelineEvent[]): FaultWindow[] {
     return [...done, ...open.values()].sort((a, b) => a.start - b.start);
 }
 
+const kst = (ms: number, withDate: boolean) =>
+    new Date(ms).toLocaleString('ko-KR', {
+        ...(withDate ? { month: 'numeric', day: 'numeric' } : {}),
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+        timeZone: 'Asia/Seoul',
+    } as Intl.DateTimeFormatOptions);
+
 export function resolveRange(key: RangeKey, now: number, windows: FaultWindow[]): ResolvedRange {
+    const custom = parseCustomRange(key);
+    if (custom) {
+        const to = Math.min(now, custom.to);
+        const from = Math.min(custom.from, to - MIN);
+        const multiDay = to - from > 12 * HOUR || now - from > 20 * HOUR;
+        return { key, window: { from, to }, label: `선택 구간 ${kst(from, multiDay)}~${kst(to, multiDay)}` };
+    }
     if (key === 'fault') {
         const faults = windows.filter((w) => w.kind === 'fault');
         const last = faults[faults.length - 1];
@@ -84,7 +100,9 @@ export function resolveRange(key: RangeKey, now: number, windows: FaultWindow[])
 
 export async function loadContext(key: RangeKey) {
     const now = Date.now();
-    const timeline = await getTimeline(now);
+    // Fault/campaign bands for a dragged window older than 24h need the events around it as well.
+    const custom = parseCustomRange(key);
+    const timeline = await getTimeline(now, Math.min(now - 24 * HOUR, (custom?.from ?? now) - 6 * HOUR));
     const windows = faultWindows(timeline);
     return { now, timeline, windows, range: resolveRange(key, now, windows) };
 }
@@ -234,6 +252,7 @@ export async function timeseries(
 
 export function pickInterval(w: Window): number {
     const span = w.to - w.from;
+    if (span <= 30 * MIN) return 30_000;
     if (span <= 2 * HOUR) return MIN;
     if (span <= 8 * HOUR) return 5 * MIN;
     return 15 * MIN;
