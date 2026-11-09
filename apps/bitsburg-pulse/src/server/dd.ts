@@ -5,10 +5,11 @@ import { listMonitorsV2 } from '@datadog/action-catalog/dd/monitor';
 import { listRUMEvents } from '@datadog/action-catalog/dd/rum';
 
 import type { FaultWindow, RangeKey, ResolvedRange, Series, TimelineEvent, Window } from '../shared/types';
+import { DD_APP_URL } from './config';
 
 export const ENV = 'demo-coinone';
 export const RUM_APP_ID = 'b6478d57-baa4-4ff1-b07c-f9fd12d514d8';
-export const APP_URL = 'https://app.datadoghq.com';
+export const APP_URL = DD_APP_URL;
 export const RUM_BASE = `@application.id:${RUM_APP_ID} env:${ENV}`;
 
 const MIN = 60_000;
@@ -27,12 +28,20 @@ export async function getTimeline(now: number): Promise<TimelineEvent[]> {
     });
     const events = (res as { events?: { title?: string; date_happened?: number; alert_type?: string }[] }).events ?? [];
     return events
-        .map((e) => ({ ts: (e.date_happened ?? 0) * 1000, title: e.title ?? '', alertType: e.alert_type ?? 'info' }))
+        .map((e) => {
+            const ts = (e.date_happened ?? 0) * 1000;
+            return { ts, title: e.title ?? '', alertType: e.alert_type ?? 'info', url: eventExplorerUrl(ts - 2 * MIN, ts + 2 * MIN) };
+        })
         .filter((e) => {
             const m = START_RE.exec(e.title) ?? END_RE.exec(e.title);
             return m !== null && KNOWN.has(m[2]);
         })
         .sort((a, b) => a.ts - b.ts);
+}
+
+export function eventExplorerUrl(from: number, to: number): string {
+    const q = encodeURIComponent('source:bitsburg-admin');
+    return `${APP_URL}/event/explorer?query=${q}&from_ts=${from}&to_ts=${to}&live=false`;
 }
 
 export function faultWindows(timeline: TimelineEvent[]): FaultWindow[] {
@@ -224,10 +233,32 @@ export async function bitsburgMonitors() {
     }));
 }
 
+const ALERT_PREFIX_RE = /^\[(Triggered|Re-Triggered|Recovered|Warn|No Data|Re-Notified)[^\]]*\] /;
+
+/** Monitor transitions (Triggered/Recovered/...) for [Bitsburg] monitors in the last 24 hours, newest first. */
+export async function monitorAlerts(now: number, monitors: { name: string; url: string }[]): Promise<TimelineEvent[]> {
+    const res = await listEvents({ inputs: { time: { from: iso(now - 24 * HOUR), to: iso(now) }, sources: 'alert' } });
+    const events = (res as { events?: { title?: string; date_happened?: number; alert_type?: string }[] }).events ?? [];
+    const byName = new Map(monitors.map((mo) => [mo.name, mo.url]));
+    return events
+        .filter((e) => (e.title ?? '').includes('[Bitsburg]'))
+        .map((e) => {
+            const title = e.title ?? '';
+            const name = title.replace(ALERT_PREFIX_RE, '');
+            return {
+                ts: (e.date_happened ?? 0) * 1000,
+                title,
+                alertType: e.alert_type ?? 'info',
+                url: byName.get(name) ?? `${APP_URL}/monitors/manage?q=${encodeURIComponent('tag:"team:bitsburg"')}`,
+            };
+        })
+        .sort((a, b) => b.ts - a.ts);
+}
+
 export async function dropoutSessions(w: Window, limit = 8) {
     const res = await listRUMEvents({
         inputs: {
-            filter_query: `${RUM_BASE} @type:action @action.name:(kyc_failed OR deposit_stuck OR cs_contact_opened)`,
+            filter_query: `${RUM_BASE} @type:action @action.name:(kyc_failed OR deposit_stuck OR cs_contact_opened) @session.has_replay:true`,
             time: { from: iso(w.from), to: iso(w.to) },
             sort: '-timestamp',
             page_limit: 50,
@@ -253,12 +284,13 @@ export async function dropoutSessions(w: Window, limit = 8) {
         const id = a?.session?.id;
         if (!id || seen.has(id)) continue;
         seen.add(id);
+        const ts = Date.parse(r.attributes?.timestamp ?? '') || 0;
         out.push({
             sessionId: id,
             version: versionOf(r),
             reason: a?.action?.name ?? '',
-            ts: Date.parse(r.attributes?.timestamp ?? '') || 0,
-            url: `${APP_URL}/rum/replay/sessions/${id}?applicationId=${RUM_APP_ID}`,
+            ts,
+            url: `${APP_URL}/rum/replay/sessions/${id}?applicationId=${RUM_APP_ID}&ts=${ts}`,
         });
         if (out.length >= limit) break;
     }

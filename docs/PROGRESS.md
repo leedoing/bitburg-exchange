@@ -278,7 +278,7 @@ MCP 검증 (`execute_code`: `MonitorsApi.listMonitors tags=team:bitsburg`, `Serv
 - 종료: 2026-11-09 21:05 KST, **완료** (렌더·업로드까지. 수치 검증은 다음 날)
 
 결과
-- 앱: **https://hyunjin.datadoghq.com/app-builder/apps/93c2badc-45cf-4c9d-aeba-1b87e70a0f81** (게시 버전 `2cde627fe8de1d3f`, 태그 `team:bitsburg`, `env:demo-coinone`, `surface:datadog.dashboard`). 다시 올릴 때는 `apps/bitsburg-pulse`에서 `.env`를 환경 변수로 읽고 `npm run upload` (README 참고). `datadog-app.config.json`의 `id`는 바꾸면 안 됩니다.
+- 앱: **https://hyunjin.datadoghq.com/app-builder/apps/93c2badc-45cf-4c9d-aeba-1b87e70a0f81** (게시 버전 `2cde627fe8de1d3f`, 후속 수정 후 `9c2f0c7cd837ea2c`, 태그 `team:bitsburg`, `env:demo-coinone`, `surface:datadog.dashboard`). 다시 올릴 때는 `apps/bitsburg-pulse`에서 `.env`를 환경 변수로 읽고 `npm run upload` (README 참고). `datadog-app.config.json`의 `id`는 바꾸면 안 됩니다.
 - 딥링크: `#/situation|ops|pm|campaign|exec|control?range=1h|6h|24h|fault`. `fault`는 마지막 장애 Event 15분 전 ~ 종료 10분 뒤입니다.
 - 데이터 출처: `dd/metrics`(queryScalarData·queryTimeseriesData, 메트릭과 RUM), `dd/events`(listEvents), `dd/monitor`(listMonitorsV2), `dd/rum`(listRUMEvents), `http/http`(admin API, Connection `bitsburg-admin-api` = 4b2edd33-a2c2-4296-8f50-ee0798bd4b55). `fetch`는 쓰지 않았습니다.
 - PM 퍼널은 "같은 세션" 기준입니다. RUM 집계로 세션 수만 세면 기존 회원의 주문까지 섞여 첫 주문 전환율이 432%처럼 나와서, 단계별 세션 ID 집합을 받아 가입 세션과 교집합으로 셉니다.
@@ -298,8 +298,28 @@ MCP 검증 (`execute_code`: `EventsApi.listEvents sources=bitsburg-admin`, `Metr
 | 클라우드 경로 렌더 (`npm run dev:verify`) | 6개 탭 모두 오류 없이 렌더, 컨트롤 탭이 Connection 거쳐 admin 상태 조회 성공 |
 | 장애 Event | 시작 11:49:05, 종료 11:54:25 (5분 자동 해제) |
 | kyc v2 대기 (분 단위) | 11:46 1.7초, 11:47 1.0초, 11:48 2.7초, **11:49 20.0초(타임아웃, failed)** |
-| 장애 중 표본 | 11:50~11:54 사이에는 v1·v2 모두 KYC 요청이 거의 없었습니다(로그 기준 11:50:18 이후 11:54:57까지 0건, 11:53~11:54는 재배포). 표본이 작아 KYC 모니터(342560230)는 OK 유지 |
+| 장애 중 표본 | 11:50~11:54 사이에는 v1·v2 모두 KYC 요청이 거의 없었습니다(로그 기준 11:50:18 이후 11:54:57까지 0건, 11:53~11:54는 재배포). 그래도 KYC 모니터(342560230)는 **11:50:10 UTC Triggered, 11:59:10 UTC Recovered** (alert Event로 확인. 처음에 "OK 유지"로 적은 것은 현재 상태만 본 잘못된 기록) |
 | 화면 수치 | 상황판 4단계·타일, PM 퍼널(같은 세션), 추정 손실 ₩400만(장애 구간), 경영 요약 카드 ₩81만, 캠페인 6개 차트 모두 현재 데이터로 그려짐 |
+
+### 9단계 후속 수정 (2026-11-09 21:30 KST)
+
+사용자 지적: 앱의 이탈 세션 리플레이, 상황판 Event, 모니터 알림이 Datadog에서 안 보인다.
+
+- 원인 1: 앱의 모든 딥링크가 `https://app.datadoghq.com`이었습니다. 이 org는 커스텀 서브도메인(`hyunjin.datadoghq.com`)이라, 여러 org를 쓰는 사용자는 다른 org로 열려 "없음"으로 보였습니다. `src/server/config.ts`의 `DD_APP_URL`로 바꿨습니다.
+- 원인 2: 운영·CS 탭은 모니터의 현재 상태만 보여 줘서, 이미 울렸다 회복한 알림이 화면에 없었습니다. `dd/events listEvents sources=alert`로 `[Bitsburg]` 모니터 알림 이력(24시간)을 가져와 운영·CS 탭과 상황판 타임라인에 보여 줍니다.
+- 상황판 Event 항목마다 Event Explorer 링크(해당 시각 ±2분, `source:bitsburg-admin`)를 달았습니다.
+- 이탈 세션 목록은 `@session.has_replay:true`인 세션만 보여 주고, 리플레이 링크에 `ts`를 붙였습니다.
+- 게시 버전 `9c2f0c7cd837ea2c`.
+
+MCP 검증
+
+| 확인 항목 | 결과 |
+| --- | --- |
+| Event `source:bitsburg-admin` (24시간) | 6건 (kyc_vendor_slow 시작·종료 3쌍) |
+| 모니터 알림 Event `sources=alert` | 342560230 Triggered 11:50:10, Recovered 11:59:10 UTC |
+| 이탈 세션 (kyc_failed·deposit_stuck·cs_contact_opened, 24시간) | 17개, 샘플 3개 모두 `session.type:user`, `has_replay:true` |
+| 리플레이 있는 세션 (24시간) | 655개 |
+| 로컬 렌더 링크 | 상황판·운영·CS·PM·DA 링크 전부 `hyunjin.datadoghq.com`, 오류 없음 |
 
 ## 최종 요약 (2026-11-09 21:05 KST)
 

@@ -31,6 +31,7 @@ export type TimelineEvent = {
     ts: number;
     title: string;
     alertType: string;
+    url: string;
 };
 
 export type Series = { label: string; points: [number, number][] };
@@ -75,6 +76,7 @@ export type OpsData = {
     csTotal: Record<string, number>;
     stages: StageSignal[];
     monitors: MonitorRow[];
+    alerts: TimelineEvent[];
 };
 
 export type VersionFunnel = { version: string; steps: number[] };

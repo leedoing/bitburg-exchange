@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { getOps } from '../pulse.backend';
 import type { Level, RangeKey } from '../shared/types';
 import { Chart } from '../ui/Chart';
-import { count } from '../ui/format';
+import { count, dateTime } from '../ui/format';
 import { Card, ErrorBox, LevelTag, Loading, Tile } from '../ui/parts';
 
 const BITS_QUESTIONS = [
@@ -118,6 +118,21 @@ export function Ops({ range }: { range: RangeKey }) {
                             </li>
                         ))}
                     </ul>
+                    <h4 className="muted">최근 24시간 알림 이력</h4>
+                    {d.alerts.length === 0 ? (
+                        <div className="muted">최근 24시간 동안 울린 모니터 알림이 없습니다.</div>
+                    ) : (
+                        <ul className="timeline">
+                            {d.alerts.map((a) => (
+                                <li key={`${a.ts}${a.title}`} className={`tl-${a.alertType}`}>
+                                    <span className="tl-time">{dateTime(a.ts)}</span>
+                                    <a href={a.url} target="_blank" rel="noreferrer">
+                                        {a.title.replace('[Bitsburg] ', '')}
+                                    </a>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
                 </Card>
                 <Card title="Bits에게 물어볼 질문">
                     <div className="questions">

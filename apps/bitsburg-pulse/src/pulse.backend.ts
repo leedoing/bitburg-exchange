@@ -5,6 +5,7 @@ import {
     grouped,
     loadContext,
     m,
+    monitorAlerts,
     pickInterval,
     RUM_BASE,
     rumAvgKrw,
@@ -121,7 +122,7 @@ function activeOf(windows: FaultWindow[]) {
 export async function getSituation(rangeKey: string): Promise<SituationData> {
     const ctx = await loadContext(asRange(rangeKey));
     const w = ctx.range.window;
-    const [stages, tiles, trend] = await Promise.all([
+    const [stages, tiles, trend, alerts] = await Promise.all([
         stageSignals(ctx.now),
         scalars(
             {
@@ -143,6 +144,7 @@ export async function getSituation(rangeKey: string): Promise<SituationData> {
             },
             w,
         ),
+        bitsburgMonitors().then((mons) => monitorAlerts(ctx.now, mons)),
     ]);
     return {
         range: ctx.range,
@@ -150,7 +152,7 @@ export async function getSituation(rangeKey: string): Promise<SituationData> {
         stages,
         ...activeOf(ctx.windows),
         windows: ctx.windows,
-        timeline: ctx.timeline.slice(-12).reverse(),
+        timeline: [...ctx.timeline, ...alerts].sort((a, b) => b.ts - a.ts).slice(0, 12),
         tiles,
         trend,
     };
@@ -174,6 +176,7 @@ export async function getOps(rangeKey: string): Promise<OpsData> {
         grouped(m(`sum:bitsburg.cs.contact{${e}} by {topic}.as_count()`), w),
         bitsburgMonitors(),
     ]);
+    const alerts = await monitorAlerts(ctx.now, monitors);
     return {
         range: ctx.range,
         windows: ctx.windows,
@@ -184,6 +187,7 @@ export async function getOps(rangeKey: string): Promise<OpsData> {
         csTotal,
         stages,
         monitors,
+        alerts,
     };
 }
 

@@ -27,15 +27,17 @@ export function Situation({ range }: { range: RangeKey }) {
                 <Card title={`단계별 건수 (${d.range.label})`}>
                     <Chart series={d.trend} window={d.range.window} faults={d.windows} kind="bar" />
                 </Card>
-                <Card title="최근 장애·캠페인 Event">
+                <Card title="최근 장애·캠페인·모니터 Event">
                     {d.timeline.length === 0 ? (
-                        <div className="muted">최근 24시간 동안 장애·캠페인 Event가 없습니다.</div>
+                        <div className="muted">최근 24시간 동안 장애·캠페인·모니터 Event가 없습니다.</div>
                     ) : (
                         <ul className="timeline">
                             {d.timeline.map((e) => (
                                 <li key={`${e.ts}${e.title}`} className={`tl-${e.alertType}`}>
                                     <span className="tl-time">{dateTime(e.ts)}</span>
-                                    <span>{e.title.replace('[Bitsburg] ', '')}</span>
+                                    <a href={e.url} target="_blank" rel="noreferrer">
+                                        {e.title.replace('[Bitsburg] ', '')}
+                                    </a>
                                 </li>
                             ))}
                         </ul>

@@ -481,7 +481,8 @@
     white-space: nowrap;
 }
 .replays a,
-.monitors a {
+.monitors a,
+.timeline a {
     color: var(--accent);
 }
 .replays a {
