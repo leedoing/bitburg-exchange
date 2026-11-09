@@ -1,5 +1,5 @@
 import { funnel, paths, stepLabels } from './server/bi';
-import { grouped, loadContext, RUM_BASE } from './server/dd';
+import { grouped, loadContext, MAX_KRW, RUM_BASE } from './server/dd';
 import {
     BI_DIMS,
     BI_MODES,
@@ -32,7 +32,7 @@ export async function getBiFunnel(rangeKey: string, modeKey: string, dimKey: str
         grouped(
             {
                 kind: 'rum',
-                query: `${action('order_filled')} @context.order.amount_krw:[1 TO 100000000]`,
+                query: `${action('order_filled')} @context.order.amount_krw:[1 TO ${MAX_KRW}]`,
                 aggregation: 'avg',
                 metric: '@context.order.amount_krw',
                 groupBy: '@usr.tier',

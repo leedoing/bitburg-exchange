@@ -26,8 +26,17 @@ async function confirmDeposit(depositId: string, amountKrw: number, ctx: Request
         const waitMs = Date.now() - started;
         await pool.query("UPDATE deposits SET status = 'completed', completed_at = now() WHERE id = $1", [depositId]);
         statsd.increment('bitsburg.deposit.completed', 1, bizTags(ctx));
+        const biz = bizTags(ctx);
         logger.info(
-          { 'usr.id': ctx.userId, step: 'deposit', 'deposit.id': depositId, 'deposit.amount_krw': amountKrw, 'deposit.wait_ms': waitMs },
+          {
+            'usr.id': ctx.userId,
+            step: 'deposit',
+            'deposit.id': depositId,
+            'deposit.amount_krw': amountKrw,
+            'deposit.wait_ms': waitMs,
+            'campaign.id': biz.campaign,
+            'app.version': biz.app_version,
+          },
           'Deposit completed',
         );
         return;

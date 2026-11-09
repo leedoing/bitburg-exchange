@@ -3,10 +3,9 @@
 import { tableQuery } from '@datadog/action-catalog/dd/ddsql';
 
 import { BI_DIM_FIELD, type BiDim, type BiDirection, type BiFunnelRow, type BiLink, type BiMode, type BiView, type StepTiming, type Window } from '../shared/types';
-import { ENV, RUM_APP_ID } from './dd';
+import { ENV, MAX_KRW, RUM_APP_ID } from './dd';
 
 const FILTER = `@application.id:${RUM_APP_ID} env:${ENV} @session.type:user`;
-const MAX_KRW = 100_000_000;
 
 
 /** Funnel steps after the entry step, per mode. Entry is "new visit" (action) or the home view (view). */

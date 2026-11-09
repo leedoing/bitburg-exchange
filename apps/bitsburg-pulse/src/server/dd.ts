@@ -92,7 +92,7 @@ export async function loadContext(key: RangeKey) {
 // ------------------------------------------------------------------ metrics and RUM queries
 type MetricQ = { kind: 'metric'; query: string; aggregator?: 'avg' | 'sum' | 'max' | 'min' | 'last' | 'percentile' };
 type RumQ = {
-    kind: 'rum';
+    kind: 'rum' | 'logs';
     query: string;
     aggregation?: 'count' | 'cardinality' | 'avg' | 'sum' | 'max' | 'pc95';
     metric?: string;
@@ -110,12 +110,32 @@ export const sessions = (query: string, groupBy?: string): RumQ => ({
     groupBy,
 });
 
+/** Per-transaction input cap (web, order, wallet). Older typos above it are excluded from every KRW sum and average. */
+export const MAX_KRW = 100_000_000;
+
 /** Average amount from RUM actions, ignoring values above the 1억 input cap (pre-cap typos). */
 export const rumAvgKrw = (actionName: string, attr: string): RumQ => ({
     kind: 'rum',
-    query: `${RUM_BASE} @type:action @action.name:${actionName} ${attr}:[1 TO 100000000]`,
+    query: `${RUM_BASE} @type:action @action.name:${actionName} ${attr}:[1 TO ${MAX_KRW}]`,
     aggregation: 'avg',
     metric: attr,
+});
+
+const KRW_LOG = {
+    order: { query: `service:bitsburg-order "Order filled"`, attr: '@order.amount_krw' },
+    deposit: { query: `service:bitsburg-wallet "Deposit completed"`, attr: '@deposit.amount_krw' },
+};
+
+/**
+ * 거래대금(order) / 입금액(deposit) from backend logs: one log per fill or completed deposit, including API-only
+ * traffic that RUM never sees. Metrics can't filter by value, so sums come from logs where the 1억 cap applies.
+ */
+export const krwSum = (kind: keyof typeof KRW_LOG, groupBy?: string): RumQ => ({
+    kind: 'logs',
+    query: `env:${ENV} ${KRW_LOG[kind].query} ${KRW_LOG[kind].attr}:[1 TO ${MAX_KRW}]`,
+    aggregation: 'sum',
+    metric: KRW_LOG[kind].attr,
+    groupBy,
 });
 
 function toQuery(q: Q, name: string, scalar: boolean) {
@@ -125,7 +145,7 @@ function toQuery(q: Q, name: string, scalar: boolean) {
             : { data_source: 'metrics' as const, name, query: q.query };
     }
     return {
-        data_source: 'rum' as const,
+        data_source: q.kind,
         name,
         compute: { aggregation: q.aggregation ?? 'count', ...(q.metric ? { metric: q.metric } : {}) },
         search: { query: q.query },

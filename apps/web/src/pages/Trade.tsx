@@ -5,6 +5,7 @@ import { action, loadUser, operation } from '../rum';
 
 /** Must match MAX_ORDER_KRW in services/order. */
 const MAX_ORDER_KRW = 100_000_000;
+const MIN_ORDER_KRW = 5_000;
 
 interface Fill {
   symbol: string;
@@ -24,8 +25,11 @@ export default function Trade() {
   const [fills, setFills] = useState<Fill[]>([]);
   const seq = useRef(0);
 
+  const amountKrw = Math.round(amount);
+  const validAmount = Number.isFinite(amountKrw) && amountKrw >= MIN_ORDER_KRW && amountKrw <= MAX_ORDER_KRW;
+
   const buy = async () => {
-    const amountKrw = Math.round(amount);
+    if (!validAmount) return;
     const order = { symbol, amount_krw: amountKrw, side: 'buy' };
     const key = `order_${loadUser()?.id ?? 'anon'}_${++seq.current}_${Date.now()}`;
     const started = Date.now();
@@ -86,13 +90,15 @@ export default function Trade() {
             <input
               data-testid="order-amount"
               type="number"
-              min={5000}
+              min={MIN_ORDER_KRW}
               max={MAX_ORDER_KRW}
               step={10_000}
               value={amount}
               onChange={(e) => setAmount(Math.min(MAX_ORDER_KRW, Number(e.target.value)))}
             />
-            <span className="muted">1회 최대 {formatKrw(MAX_ORDER_KRW)}</span>
+            <span className={validAmount ? 'muted' : 'error'}>
+              {formatKrw(MIN_ORDER_KRW)} ~ {formatKrw(MAX_ORDER_KRW)} 사이로 입력해 주세요
+            </span>
           </label>
           <div className="quick">
             {[50_000, 300_000, 1_000_000, 3_000_000].map((v) => (
@@ -101,7 +107,7 @@ export default function Trade() {
               </button>
             ))}
           </div>
-          <button className="btn buy block" data-testid="order-submit" disabled={busy} onClick={buy}>
+          <button className="btn buy block" data-testid="order-submit" disabled={busy || !validAmount} onClick={buy}>
             {busy ? '주문 중…' : '매수 주문'}
           </button>
           {message && (

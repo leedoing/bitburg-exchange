@@ -3,6 +3,7 @@ import {
     dropoutSessions,
     ENV,
     grouped,
+    krwSum,
     loadContext,
     m,
     monitorAlerts,
@@ -129,9 +130,9 @@ export async function getSituation(rangeKey: string): Promise<SituationData> {
                 signups: m(`sum:bitsburg.signup.completed{${e}}.as_count()`),
                 kycApproved: m(`sum:bitsburg.kyc.result{${e},result:approved}.as_count()`),
                 deposits: m(`sum:bitsburg.deposit.completed{${e}}.as_count()`),
-                depositKrw: m(`sum:bitsburg.deposit.amount_krw{${e}}`),
+                depositKrw: krwSum('deposit'),
                 orders: m(`sum:bitsburg.order.filled{${e}}.as_count()`),
-                orderKrw: m(`sum:bitsburg.order.amount_krw{${e}}`),
+                orderKrw: krwSum('order'),
             },
             w,
         ),
@@ -263,7 +264,7 @@ export async function getCampaign(rangeKey: string): Promise<CampaignData> {
         timeseries({ s: sessions('@type:session', '@context.campaign.id') }, w),
         timeseries({ s: m(`sum:bitsburg.signup.completed{${e}} by {campaign}.as_count()`) }, w),
         timeseries({ s: m(`sum:bitsburg.order.filled{${e}} by {campaign}.as_count()`) }, w),
-        timeseries({ s: m(`sum:bitsburg.order.amount_krw{${e}} by {campaign}`) }, w),
+        timeseries({ s: krwSum('order', '@campaign.id') }, w),
         timeseries({ p95: m(`p95:trace.express.request{service:bitsburg-order,${e}}`) }, w, { formula: 'p95', label: '주문 p95(초)' }),
         timeseries(
             { f: m(`sum:bitsburg.order.failed{${e}}.as_count()`), p: m(`sum:bitsburg.order.placed{${e}}.as_count()`) },
@@ -272,7 +273,7 @@ export async function getCampaign(rangeKey: string): Promise<CampaignData> {
         ),
         grouped(sessions('@type:session', '@context.campaign.id'), w),
         grouped(m(`sum:bitsburg.order.filled{${e}} by {campaign}.as_count()`), w),
-        grouped(m(`sum:bitsburg.order.amount_krw{${e}} by {campaign}`), w),
+        grouped(krwSum('order', '@campaign.id'), w),
     ]);
     const isCampaign = (k: string) => k !== 'none' && k !== 'N/A' && k !== 'all' && k !== '';
     const split = (rec: Record<string, number>) =>
@@ -360,9 +361,9 @@ export async function getExec(rangeKey: string): Promise<ExecData> {
             {
                 signups: m(`sum:bitsburg.signup.completed{${e}}.as_count()`),
                 firstDeposits: m(`sum:bitsburg.deposit.completed{${e}}.as_count()`),
-                depositKrw: m(`sum:bitsburg.deposit.amount_krw{${e}}`),
+                depositKrw: krwSum('deposit'),
                 orders: m(`sum:bitsburg.order.filled{${e}}.as_count()`),
-                orderKrw: m(`sum:bitsburg.order.amount_krw{${e}}`),
+                orderKrw: krwSum('order'),
                 avgDeposit: rumAvgKrw('deposit_completed', '@context.deposit.amount_krw'),
                 avgOrder: rumAvgKrw('order_filled', '@context.order.amount_krw'),
             },

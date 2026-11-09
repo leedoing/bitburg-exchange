@@ -1,6 +1,10 @@
 locals {
   fault_events = [{ q = "service:bitsburg-admin env:${local.env}", tags_execution = "and" }]
 
+  # 거래대금 comes from "Order filled" logs, not the distribution metric: metrics can't drop values above the
+  # 1억 per-order cap (pre-cap typos), logs can. Template variables map to the log attributes app.version / campaign.id.
+  order_krw_logs = "env:${local.env} service:bitsburg-order \"Order filled\" @order.amount_krw:[1 TO 100000000] @app.version:$version.value @campaign.id:$campaign.value"
+
   dashboard = {
     title       = "Bitsburg Business Overview"
     description = "Bitsburg Exchange 데모 백업 대시보드. 주인공은 Datadog App \"Bitsburg Pulse\"이고, 이 대시보드는 같은 숫자를 Datadog 기본 화면으로 보여 줍니다. 붉은 선은 장애 주입 Event입니다."
@@ -125,13 +129,13 @@ locals {
             {
               definition = {
                 type      = "query_value"
-                title     = "거래대금 (선택 기간, 원)"
+                title     = "거래대금 (선택 기간, 원, 1억 초과 주문 제외)"
                 precision = 0
                 autoscale = true
                 requests = [{
                   response_format = "scalar"
                   queries = [
-                    { data_source = "metrics", name = "q", query = "sum:bitsburg.order.amount_krw{env:${local.env},$version,$campaign}", aggregator = "sum" },
+                    { data_source = "logs", name = "q", compute = { aggregation = "sum", metric = "@order.amount_krw" }, search = { query = local.order_krw_logs }, indexes = ["*"] },
                   ]
                   formulas = [{ formula = "q" }]
                 }]
@@ -147,7 +151,7 @@ locals {
                   display_type    = "bars"
                   response_format = "timeseries"
                   queries = [
-                    { data_source = "metrics", name = "q", query = "sum:bitsburg.order.amount_krw{env:${local.env},$version,$campaign}.rollup(sum, 60)" },
+                    { data_source = "logs", name = "q", compute = { aggregation = "sum", metric = "@order.amount_krw", interval = 60000 }, search = { query = local.order_krw_logs }, indexes = ["*"] },
                   ]
                   formulas = [{ formula = "q", alias = "거래대금" }]
                 }]

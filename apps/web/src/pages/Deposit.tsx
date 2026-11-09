@@ -9,6 +9,7 @@ const STUCK_MS = 60_000;
 const GIVE_UP_MS = 180_000;
 /** Must match MAX_DEPOSIT_KRW in services/wallet. */
 const MAX_DEPOSIT_KRW = 100_000_000;
+const MIN_DEPOSIT_KRW = 10_000;
 
 type Phase = 'idle' | 'pending' | 'stuck' | 'completed' | 'error';
 
@@ -60,8 +61,11 @@ export default function Deposit() {
     setTimeout(() => void poll(id), POLL_MS);
   };
 
+  const amountKrw = Math.round(amount);
+  const validAmount = Number.isFinite(amountKrw) && amountKrw >= MIN_DEPOSIT_KRW && amountKrw <= MAX_DEPOSIT_KRW;
+
   const submit = async () => {
-    const amountKrw = Math.round(amount);
+    if (!validAmount) return;
     action('deposit_requested', { step: 'deposit', deposit: { amount_krw: amountKrw } });
     setPhase('pending');
     setElapsed(0);
@@ -94,7 +98,7 @@ export default function Deposit() {
           <input
             data-testid="deposit-amount"
             type="number"
-            min={10_000}
+            min={MIN_DEPOSIT_KRW}
             max={MAX_DEPOSIT_KRW}
             step={10_000}
             value={amount}
@@ -113,7 +117,12 @@ export default function Deposit() {
         {(phase === 'idle' || phase === 'error') && (
           <>
             {phase === 'error' && <p className="error">입금 요청에 실패했어요. 다시 시도해 주세요.</p>}
-            <button className="btn primary block" data-testid="deposit-submit" onClick={submit}>
+            {!validAmount && (
+              <p className="error">
+                {formatKrw(MIN_DEPOSIT_KRW)} ~ {formatKrw(MAX_DEPOSIT_KRW)} 사이로 입력해 주세요
+              </p>
+            )}
+            <button className="btn primary block" data-testid="deposit-submit" disabled={!validAmount} onClick={submit}>
               원화 입금 요청
             </button>
           </>

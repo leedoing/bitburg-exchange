@@ -70,7 +70,15 @@ app.post('/api/orders', async (req, res) => {
   if (!Number.isFinite(amountKrw) || amountKrw <= 0 || amountKrw > MAX_ORDER_KRW) return res.status(400).json({ error: 'invalid_amount' });
 
   const tags = bizTags(req.ctx, { symbol });
-  const logBase = { 'usr.id': userId, step: 'trade', 'order.symbol': symbol, 'order.amount_krw': amountKrw, 'order.side': 'buy' };
+  const logBase = {
+    'usr.id': userId,
+    step: 'trade',
+    'order.symbol': symbol,
+    'order.amount_krw': amountKrw,
+    'order.side': 'buy',
+    'campaign.id': tags.campaign,
+    'app.version': tags.app_version,
+  };
   statsd.increment('bitsburg.order.placed', 1, tags);
   tagSpan({ 'order.symbol': symbol, 'order.amount_krw': amountKrw, 'order.side': 'buy' });
 
