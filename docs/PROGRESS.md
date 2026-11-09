@@ -18,6 +18,7 @@
 
 - [ ] (비용) AWS 계정의 이번 달 지출이 이미 약 29.5달러(11/9 기준)입니다. Budget `bitsburg-demo-monthly-50usd`는 계정 전체 기준이라 80%(40달러) 알림이 곧 올 수 있습니다.
 - [ ] (비용) EC2 리소스가 생긴 뒤 하루 지나면 Billing > Cost allocation tags에서 `Purpose` 태그를 활성화하면 데모 비용만 따로 볼 수 있습니다.
+- [ ] (3단계) RUM > Sessions에서 Bitsburg Exchange 세션 하나를 열어 Session Replay가 실제로 재생되는지 눈으로 확인 (데이터상 `has_replay:true`는 확인됨).
 
 ## 단계 기록
 
@@ -93,3 +94,28 @@ MCP 검증 (`execute_code`: `SpansApi.aggregateSpans/listSpans`, `LogsApi.aggreg
 | 로그-트레이스 연결 | 최근 30분 로그 77건 중 58건에 `trace_id` (나머지는 시작·백그라운드 로그) |
 | bitsburg.* 메트릭 | cs.contact, deposit.amount_krw, deposit.completed, deposit.pending_seconds, deposit.pending_count, deposit.requested, kyc.result, kyc.wait_ms, order.amount_krw, order.filled, order.placed, signup.completed (order.failed는 실패가 생기면 나타남) |
 | 값 확인 (최근 1시간) | deposit.requested 15 / deposit.completed 15, kyc.result v1 approved 7·failed 1, v2 approved 5·failed 2 |
+
+### 3단계. 프론트엔드와 RUM
+
+- 시작: 2026-11-09 16:46 KST
+- 할 일: apps/web 화면 6개(home, signup, kyc, deposit, trade, login), 데모 배너, CS 플로팅 버튼, RUM/Logs init(DATA_SPEC 4.1), 버전 분기(3.4.2/3.5.0, kyc_flow_v2), 전역 속성, Custom Action 12개, Operation 4개, API 헤더, MCP로 세션·Action·Operation·APM 연결 확인
+- 종료: 2026-11-09 16:58 KST, **완료** (Replay 재생 육안 확인은 사람이 할 일로 남김)
+
+결과
+- RUM Browser SDK 6.33.0. Operation API는 `startFeatureOperation / succeedFeatureOperation / failFeatureOperation(name, reason, { operationKey, context })`이고 실패 사유는 `error | abandoned | other` 세 가지라 스펙 사유를 이렇게 대응시켰습니다: KYC timeout→`error`, rejected→`other`, 사용자 취소→`abandoned`, 입금 60초 초과(stuck)→`other`, 주문 실패→`error`. 원래 사유는 operation context `reason`과 action context에 남깁니다.
+- 전역 속성은 `setGlobalContextProperty('client' | 'campaign' | 'demo', …)`로 넣어 RUM에서 `@context.client.platform`, `@context.campaign.id`, `@context.campaign.source`, `@context.demo.scenario`로 조회됩니다.
+- `demo.scenario`는 URL `?scenario=`가 있으면 그 값, 없으면 `/api/demo/state`(서버의 현재 장애)를 따라갑니다.
+- "직접 클릭" 대신 Playwright 검증 세션(`pnpm traffic --mode verify`)으로 3.4.2·3.5.0 각각 신규 회원 전체 여정 + 기존 회원 매수를 돌렸습니다. `deposit_stuck`을 만들기 위해 이 단계에서만 DB에 `deposit_delay`를 8분 넣었다가 껐습니다.
+
+MCP 검증 (`execute_code`: `RUMApi.aggregateRUMEvents/listRUMEvents`, 최근 15분, app Bitsburg Exchange)
+
+| 확인 항목 | 결과 |
+| --- | --- |
+| RUM 세션 / @session.type | 4개 / 전부 `user` |
+| 버전별 세션 | 3.4.2: 2, 3.5.0: 2 (`@feature_flags.kyc_flow_v2` 3.4.2=false, 3.5.0=true) |
+| View 이름 | home, signup, kyc, deposit, trade, login |
+| Custom Action 12개 | signup_started 2, signup_completed 2, kyc_submitted 4, kyc_approved 2, kyc_failed 2, deposit_requested 2, deposit_completed 2, deposit_stuck 1, order_placed 10, order_filled 8, order_failed 2, cs_contact_opened 2 |
+| Operation 4개 | signup success 2 / kyc_verification success 2·failure(abandoned) 2 / krw_deposit success 1·failure(other) 1 / place_order success 8·failure(error) 2 |
+| 금액 타입 | `@context.order.amount_krw` 숫자 (예: 750000) |
+| /api 리소스 → APM | fetch 리소스 7종 전부 `@_dd.trace_id` 있음 (/api/orders 10/10, /api/kyc/verify 4/4 …) |
+| Session Replay | 세션 4개 모두 `@session.has_replay:true` |
