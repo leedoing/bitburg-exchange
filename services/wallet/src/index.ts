@@ -45,12 +45,15 @@ async function confirmDeposit(depositId: string, amountKrw: number, ctx: Request
   logger.error({ 'usr.id': ctx.userId, step: 'deposit', 'deposit.id': depositId }, 'Bank confirmation gave up');
 }
 
+/** Keeps a stray typo from skewing deposit sums on dashboards. Must match apps/web Deposit page. */
+const MAX_DEPOSIT_KRW = 100_000_000;
+
 const app = createApp();
 
 app.post('/api/wallet/deposit', async (req, res, next) => {
   try {
     const amountKrw = Math.round(Number(req.body?.amountKrw));
-    if (!Number.isFinite(amountKrw) || amountKrw <= 0) return res.status(400).json({ error: 'invalid_amount' });
+    if (!Number.isFinite(amountKrw) || amountKrw <= 0 || amountKrw > MAX_DEPOSIT_KRW) return res.status(400).json({ error: 'invalid_amount' });
     const depositId = `dep_${randomBytes(6).toString('hex')}`;
     const userId = req.ctx.userId ?? 'anonymous';
     await pool.query(

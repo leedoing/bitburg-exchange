@@ -3,6 +3,9 @@ import { api, ApiError } from '../api';
 import { COINS, CoinSymbol, formatKrw, OrderBook, Sparkline, useTicker } from '../market';
 import { action, loadUser, operation } from '../rum';
 
+/** Must match MAX_ORDER_KRW in services/order. */
+const MAX_ORDER_KRW = 100_000_000;
+
 interface Fill {
   symbol: string;
   amountKrw: number;
@@ -80,7 +83,16 @@ export default function Trade() {
           <h3>매수</h3>
           <label>
             주문 금액 (원)
-            <input data-testid="order-amount" type="number" min={5000} step={10_000} value={amount} onChange={(e) => setAmount(Number(e.target.value))} />
+            <input
+              data-testid="order-amount"
+              type="number"
+              min={5000}
+              max={MAX_ORDER_KRW}
+              step={10_000}
+              value={amount}
+              onChange={(e) => setAmount(Math.min(MAX_ORDER_KRW, Number(e.target.value)))}
+            />
+            <span className="muted">1회 최대 {formatKrw(MAX_ORDER_KRW)}</span>
           </label>
           <div className="quick">
             {[50_000, 300_000, 1_000_000, 3_000_000].map((v) => (

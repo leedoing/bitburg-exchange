@@ -7,6 +7,8 @@ import { action, operation } from '../rum';
 const POLL_MS = 2000;
 const STUCK_MS = 60_000;
 const GIVE_UP_MS = 180_000;
+/** Must match MAX_DEPOSIT_KRW in services/wallet. */
+const MAX_DEPOSIT_KRW = 100_000_000;
 
 type Phase = 'idle' | 'pending' | 'stuck' | 'completed' | 'error';
 
@@ -93,10 +95,11 @@ export default function Deposit() {
             data-testid="deposit-amount"
             type="number"
             min={10_000}
+            max={MAX_DEPOSIT_KRW}
             step={10_000}
             value={amount}
             disabled={phase === 'pending' || phase === 'stuck'}
-            onChange={(e) => setAmount(Number(e.target.value))}
+            onChange={(e) => setAmount(Math.min(MAX_DEPOSIT_KRW, Number(e.target.value)))}
           />
         </label>
         <div className="quick">

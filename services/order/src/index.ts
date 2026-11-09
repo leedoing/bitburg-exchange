@@ -57,6 +57,9 @@ async function saveOrder(userId: string, symbol: string, amountKrw: number, pric
   return waitedMs;
 }
 
+/** Keeps a stray typo from skewing trade-value sums on dashboards. Must match apps/web Trade page. */
+const MAX_ORDER_KRW = 100_000_000;
+
 const app = createApp();
 
 app.post('/api/orders', async (req, res) => {
@@ -64,7 +67,7 @@ app.post('/api/orders', async (req, res) => {
   const amountKrw = Math.round(Number(req.body?.amountKrw));
   const userId = req.ctx.userId ?? 'anonymous';
   const started = Date.now();
-  if (!Number.isFinite(amountKrw) || amountKrw <= 0) return res.status(400).json({ error: 'invalid_amount' });
+  if (!Number.isFinite(amountKrw) || amountKrw <= 0 || amountKrw > MAX_ORDER_KRW) return res.status(400).json({ error: 'invalid_amount' });
 
   const tags = bizTags(req.ctx, { symbol });
   const logBase = { 'usr.id': userId, step: 'trade', 'order.symbol': symbol, 'order.amount_krw': amountKrw, 'order.side': 'buy' };
