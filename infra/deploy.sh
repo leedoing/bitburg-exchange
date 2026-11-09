@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Package the committed code (git archive: no .env), upload it to the artifact bucket,
-# and redeploy on the EC2 host through SSM Run Command.
+# and redeploy on the EC2 host through SSM Run Command (reinstalling infra/host/bitsburg-deploy.sh first).
 #   infra/deploy.sh            # redeploy HEAD to the running instance
 #   infra/deploy.sh --url-only # print nothing but upload and write the presigned URL to infra/terraform/artifact.auto.tfvars
 set -euo pipefail
@@ -25,7 +25,7 @@ fi
 INSTANCE="$(terraform -chdir="$TF" output -raw instance_id)"
 CMD_ID="$(aws ssm send-command --region "$REGION" --instance-ids "$INSTANCE" --document-name AWS-RunShellScript \
   --comment "bitsburg deploy $KEY" --timeout-seconds 1800 \
-  --parameters "commands=[\"/usr/local/bin/bitsburg-deploy '$URL' 2>&1 | tail -20\"]" \
+  --parameters "commands=[\"curl -fsSL '$URL' | tar -xzf - -O infra/host/bitsburg-deploy.sh > /usr/local/bin/bitsburg-deploy && chmod +x /usr/local/bin/bitsburg-deploy && /usr/local/bin/bitsburg-deploy '$URL' 2>&1 | tail -20\"]" \
   --query Command.CommandId --output text)"
 echo "ssm command $CMD_ID sent to $INSTANCE, waiting..."
 aws ssm wait command-executed --region "$REGION" --command-id "$CMD_ID" --instance-id "$INSTANCE" || true

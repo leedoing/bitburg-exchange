@@ -4,6 +4,7 @@ import { defineConfig } from 'vite';
 
 import { version } from './package.json';
 import datadogAppConfig from './datadog-app.config.json';
+import { sharedCache } from './shared-cache.vite';
 
 const hasDatadogApiKeys = Boolean(
     (process.env.DD_API_KEY || process.env.DATADOG_API_KEY) &&
@@ -15,7 +16,10 @@ export default defineConfig({
     build: {
         sourcemap: true,
     },
+    // PULSE_PUBLIC (Docker image for the shared EC2 URL): listen on all interfaces, no hot reload.
+    server: process.env.PULSE_PUBLIC ? { host: '0.0.0.0', port: 5173, strictPort: true, hmr: false } : undefined,
     plugins: [
+        ...(process.env.PULSE_PUBLIC ? [sharedCache()] : []),
         react(),
         datadogVitePlugin({
             logLevel: 'debug',

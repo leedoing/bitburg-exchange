@@ -2,6 +2,10 @@ output "web_url" {
   value = "http://${aws_eip.demo.public_ip}"
 }
 
+output "pulse_url" {
+  value = "http://${aws_eip.demo.public_ip}:8080"
+}
+
 output "public_ip" {
   value = aws_eip.demo.public_ip
 }

@@ -227,5 +227,20 @@ services:
     depends_on:
       - web
 
+  # Datadog App "Bitsburg Pulse" dev server for attendees (EC2 only: infra/host/bitsburg-deploy.sh starts it).
+  pulse:
+    image: bitsburg-pulse:local
+    build:
+      context: apps/bitsburg-pulse
+    profiles: ["pulse"]
+    restart: unless-stopped
+    mem_limit: 1g
+    environment:
+      DD_SITE: ${DD_SITE}
+      DD_API_KEY: ${DD_API_KEY}
+      DD_APP_KEY: ${PULSE_DD_APP_KEY:-}
+    ports:
+      - "${PULSE_PORT:-8080}:5173"
+
 volumes:
   pgdata:
