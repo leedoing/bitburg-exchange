@@ -1,0 +1,10 @@
+{
+  "name": "bitsburg-demo",
+  "private": true,
+  "packageManager": "pnpm@10.18.3",
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev:web": "pnpm --filter @bitsburg/web dev",
+    "traffic": "pnpm --filter @bitsburg/traffic-gen traffic"
+  }
+}

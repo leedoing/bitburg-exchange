@@ -1,0 +1,16 @@
+---
+description: Bitsburg Exchange 데모 프로젝트 공통 규칙
+alwaysApply: true
+---
+
+# Bitsburg Exchange 데모 규칙
+
+기준 문서는 `docs/DATA_SPEC.md`입니다. 이름이나 속성이 헷갈리면 항상 이 문서로 돌아갑니다.
+
+- 서비스 이름, RUM View/Action/Operation 이름, 메트릭 이름, 태그 키는 `docs/DATA_SPEC.md`와 글자 하나까지 같게 씁니다.
+- Datadog API 키, App 키, admin 토큰은 프론트엔드 코드·저장소·로그에 절대 넣지 않고 출력하지 않습니다. 브라우저 RUM은 clientToken만 씁니다.
+- 코인원 이름, 로고, 색상은 쓰지 않습니다. 앱 이름은 Bitsburg Exchange입니다.
+- AWS 리소스는 ap-northeast-2에, 태그 `Purpose=coinone-abm-demo`를 붙여서만 만듭니다. AWS·Datadog 리소스 생성/삭제와 terraform apply는 실행 전에 명령이나 plan을 보여주고 승인받습니다.
+- 각 단계가 끝나면 Datadog MCP로 실제 데이터가 들어왔는지 확인하고 결과를 표로 보고합니다.
+- `DD_SITE`는 `.env` 값을 모든 설정(RUM, Agent, Terraform, Datadog Apps)에 똑같이 씁니다.
+- 진행 상황은 `docs/PROGRESS.md`에 기록합니다.

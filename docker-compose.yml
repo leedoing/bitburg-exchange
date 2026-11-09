@@ -1,0 +1,225 @@
+name: bitsburg
+
+x-service: &service
+  image: bitsburg-services:local
+  build:
+    context: .
+    dockerfile: services/Dockerfile
+  restart: unless-stopped
+  depends_on:
+    postgres:
+      condition: service_healthy
+  healthcheck:
+    test: ["CMD", "node", "-e", "fetch('http://localhost:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+    interval: 15s
+    timeout: 5s
+    retries: 5
+    start_period: 20s
+
+x-dd-env: &dd-env
+  DD_ENV: demo-coinone
+  DD_VERSION: "1.0.0"
+  DD_AGENT_HOST: datadog-agent
+  DD_LOGS_INJECTION: "true"
+  DD_RUNTIME_METRICS_ENABLED: "true"
+  DD_TRACE_STARTUP_LOGS: "false"
+  DD_TAGS: team:bitsburg
+  PORT: "3000"
+  DATABASE_URL: postgres://bitsburg:bitsburg@postgres:5432/bitsburg
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bitsburg
+      POSTGRES_PASSWORD: bitsburg
+      POSTGRES_DB: bitsburg
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/db/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./infra/db/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+      - ./infra/db:/seed:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bitsburg -d bitsburg"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  datadog-agent:
+    image: gcr.io/datadoghq/agent:7
+    restart: unless-stopped
+    environment:
+      DD_API_KEY: ${DD_API_KEY}
+      DD_SITE: ${DD_SITE}
+      DD_HOSTNAME: ${DD_HOSTNAME:-bitsburg-local}
+      DD_ENV: demo-coinone
+      DD_TAGS: team:bitsburg
+      DD_APM_ENABLED: "true"
+      DD_APM_NON_LOCAL_TRAFFIC: "true"
+      DD_DOGSTATSD_NON_LOCAL_TRAFFIC: "true"
+      DD_LOGS_ENABLED: "true"
+      DD_LOGS_CONFIG_CONTAINER_COLLECT_ALL: "false"
+      DD_CONTAINER_EXCLUDE: "name:datadog-agent"
+      DD_PROCESS_CONFIG_PROCESS_COLLECTION_ENABLED: "true"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc/:/host/proc/:ro
+      - /sys/fs/cgroup/:/host/sys/fs/cgroup:ro
+    healthcheck:
+      test: ["CMD", "agent", "health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  api-gateway:
+    <<: *service
+    environment:
+      <<: *dd-env
+      DD_SERVICE: bitsburg-api-gateway
+      SERVICE_DIR: api-gateway
+    labels:
+      com.datadoghq.ad.logs: '[{"source":"nodejs","service":"bitsburg-api-gateway"}]'
+      com.datadoghq.tags.service: bitsburg-api-gateway
+      com.datadoghq.tags.env: demo-coinone
+      com.datadoghq.tags.version: "1.0.0"
+
+  auth:
+    <<: *service
+    environment:
+      <<: *dd-env
+      DD_SERVICE: bitsburg-auth
+      SERVICE_DIR: auth
+    labels:
+      com.datadoghq.ad.logs: '[{"source":"nodejs","service":"bitsburg-auth"}]'
+      com.datadoghq.tags.service: bitsburg-auth
+      com.datadoghq.tags.env: demo-coinone
+      com.datadoghq.tags.version: "1.0.0"
+
+  kyc:
+    <<: *service
+    environment:
+      <<: *dd-env
+      DD_SERVICE: bitsburg-kyc
+      SERVICE_DIR: kyc
+    labels:
+      com.datadoghq.ad.logs: '[{"source":"nodejs","service":"bitsburg-kyc"}]'
+      com.datadoghq.tags.service: bitsburg-kyc
+      com.datadoghq.tags.env: demo-coinone
+      com.datadoghq.tags.version: "1.0.0"
+
+  kyc-vendor-mock:
+    <<: *service
+    environment:
+      <<: *dd-env
+      DD_SERVICE: bitsburg-kyc-vendor
+      SERVICE_DIR: kyc-vendor-mock
+    labels:
+      com.datadoghq.ad.logs: '[{"source":"nodejs","service":"bitsburg-kyc-vendor"}]'
+      com.datadoghq.tags.service: bitsburg-kyc-vendor
+      com.datadoghq.tags.env: demo-coinone
+      com.datadoghq.tags.version: "1.0.0"
+
+  wallet:
+    <<: *service
+    environment:
+      <<: *dd-env
+      DD_SERVICE: bitsburg-wallet
+      SERVICE_DIR: wallet
+    labels:
+      com.datadoghq.ad.logs: '[{"source":"nodejs","service":"bitsburg-wallet"}]'
+      com.datadoghq.tags.service: bitsburg-wallet
+      com.datadoghq.tags.env: demo-coinone
+      com.datadoghq.tags.version: "1.0.0"
+
+  bank-gateway-mock:
+    <<: *service
+    environment:
+      <<: *dd-env
+      DD_SERVICE: bitsburg-bank-gateway
+      SERVICE_DIR: bank-gateway-mock
+    labels:
+      com.datadoghq.ad.logs: '[{"source":"nodejs","service":"bitsburg-bank-gateway"}]'
+      com.datadoghq.tags.service: bitsburg-bank-gateway
+      com.datadoghq.tags.env: demo-coinone
+      com.datadoghq.tags.version: "1.0.0"
+
+  order:
+    <<: *service
+    environment:
+      <<: *dd-env
+      DD_SERVICE: bitsburg-order
+      SERVICE_DIR: order
+      ORDER_DB_POOL_SIZE: ${ORDER_DB_POOL_SIZE:-10}
+    labels:
+      com.datadoghq.ad.logs: '[{"source":"nodejs","service":"bitsburg-order"}]'
+      com.datadoghq.tags.service: bitsburg-order
+      com.datadoghq.tags.env: demo-coinone
+      com.datadoghq.tags.version: "1.0.0"
+
+  matching-engine:
+    <<: *service
+    environment:
+      <<: *dd-env
+      DD_SERVICE: bitsburg-matching
+      SERVICE_DIR: matching-engine
+    labels:
+      com.datadoghq.ad.logs: '[{"source":"nodejs","service":"bitsburg-matching"}]'
+      com.datadoghq.tags.service: bitsburg-matching
+      com.datadoghq.tags.env: demo-coinone
+      com.datadoghq.tags.version: "1.0.0"
+
+  admin:
+    <<: *service
+    environment:
+      <<: *dd-env
+      DD_SERVICE: bitsburg-admin
+      SERVICE_DIR: admin
+      ADMIN_TOKEN: ${ADMIN_TOKEN}
+    labels:
+      com.datadoghq.ad.logs: '[{"source":"nodejs","service":"bitsburg-admin"}]'
+      com.datadoghq.tags.service: bitsburg-admin
+      com.datadoghq.tags.env: demo-coinone
+      com.datadoghq.tags.version: "1.0.0"
+
+  web:
+    image: bitsburg-web:local
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        VITE_DD_RUM_APP_ID: ${DD_RUM_APP_ID}
+        VITE_DD_RUM_CLIENT_TOKEN: ${DD_RUM_CLIENT_TOKEN}
+        VITE_DD_SITE: ${DD_SITE}
+        VITE_APP_VERSION_STABLE: ${APP_VERSION_STABLE:-3.4.2}
+        VITE_APP_VERSION_NEW: ${APP_VERSION_NEW:-3.5.0}
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-80}:80"
+    depends_on:
+      - api-gateway
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  traffic-gen:
+    image: bitsburg-traffic:local
+    build:
+      context: .
+      dockerfile: tools/traffic-gen/Dockerfile
+    profiles: ["traffic"]
+    restart: unless-stopped
+    shm_size: 1gb
+    environment:
+      TRAFFIC_MODE: ${TRAFFIC_MODE:-baseline}
+      TRAFFIC_CONCURRENCY: ${TRAFFIC_CONCURRENCY:-10}
+      TRAFFIC_DURATION: ${TRAFFIC_DURATION:-0}
+      TRAFFIC_TARGET: ${TRAFFIC_TARGET:-http://web}
+    depends_on:
+      - web
+
+volumes:
+  pgdata:
