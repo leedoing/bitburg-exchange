@@ -181,6 +181,8 @@ services:
       DD_SERVICE: bitsburg-admin
       SERVICE_DIR: admin
       ADMIN_TOKEN: ${ADMIN_TOKEN}
+      DD_API_KEY: ${DD_API_KEY}
+      DD_SITE: ${DD_SITE}
     labels:
       com.datadoghq.ad.logs: '[{"source":"nodejs","service":"bitsburg-admin"}]'
       com.datadoghq.tags.service: bitsburg-admin

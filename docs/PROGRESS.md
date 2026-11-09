@@ -119,3 +119,32 @@ MCP 검증 (`execute_code`: `RUMApi.aggregateRUMEvents/listRUMEvents`, 최근 15
 | 금액 타입 | `@context.order.amount_krw` 숫자 (예: 750000) |
 | /api 리소스 → APM | fetch 리소스 7종 전부 `@_dd.trace_id` 있음 (/api/orders 10/10, /api/kyc/verify 4/4 …) |
 | Session Replay | 세션 4개 모두 `@session.has_replay:true` |
+
+### 4단계. 장애 스위치와 Datadog Event
+
+- 시작: 2026-11-09 16:59 KST
+- 할 일: admin API(`/admin/faults`, `/admin/campaign`, `/admin/state`, X-Admin-Token), postgres 상태 저장, 자동 해제 타이머, 시작·종료 Event, `scripts/fault.sh`, kyc_vendor_slow 5분 ON→OFF 후 MCP로 Event와 v1/v2 지연 비교
+- 종료: 2026-11-09 17:03 KST, **완료**
+
+결과
+- admin은 `demo_state` 테이블에 쓰고, 다른 서비스는 5초마다 읽습니다. 5초마다 만료된 장애·캠페인을 끄고 종료 Event를 보냅니다(1분짜리로 자동 해제 확인).
+- `listing_spike`를 켜면 같은 시간 동안 캠페인 `listing_pups`도 켜지고, order 서비스 DB 풀이 3으로 줄며 쿼리마다 80~250ms `pg_sleep`이 붙습니다.
+- 토큰 없이 `/admin/state` 호출 시 401. nginx는 `/admin/`을 admin으로 넘깁니다(9단계 Datadog App 백엔드 함수가 호출).
+- 사용법: `scripts/fault.sh kyc_vendor_slow on 0.7 15`, `scripts/fault.sh kyc_vendor_slow off`, `scripts/fault.sh state` (원격은 `BASE=http://<EIP>`).
+- 수정한 문제: 처음에는 DogStatsD로 Event를 보냈는데, 한글 제목 길이를 글자 수로 계산해서 Agent가 제목을 `장애 주입 시작: kyc`처럼 잘랐습니다. 스펙대로 Events API(`/api/v1/events`)로 바꿨습니다. 이 때문에 admin 컨테이너에만 `DD_API_KEY`가 들어갑니다. 07:51·07:56(UTC)에 잘린 제목의 Event 2건이 남아 있습니다.
+
+kyc_vendor_slow 리허설: intensity 0.5, 07:51:05~07:56:05 UTC, v1(3.4.2)·v2(3.5.0) 요청 각 2개 루프
+
+MCP 검증 (`execute_code`: `EventsApi.listEvents tags=source:bitsburg-admin`, `SpansApi.aggregateSpans` service:bitsburg-kyc-vendor, `@kyc.flow`별 median/p95)
+
+| 구간 | v1 건수 / p50 / p95 | v2 건수 / p50 / p95 |
+| --- | --- | --- |
+| 직전 (07:49:35~07:51:05) | 58 / 1.95초 / 2.85초 | 60 / 1.91초 / 2.85초 |
+| 장애 중 (07:51:30~07:56:05) | 178 / 1.99초 / 2.97초 | 33 / **14.4초** / **19.8초** |
+| 직후 (07:56:30~07:58:00) | 60 / 1.95초 / 2.91초 | 60 / 1.80초 / 2.79초 |
+
+| 확인 항목 | 결과 |
+| --- | --- |
+| 장애 중 kyc 에러 span (timeout) | v2만 16건, v1 0건 |
+| 시작 Event | `[Bitsburg] 장애 주입 시작: kyc_vendor_slow` (warning, tags scenario:kyc_vendor_slow, source:bitsburg-admin, env:demo-coinone) |
+| 종료 Event | `[Bitsburg] 장애 주입 종료: kyc_vendor_slow` (success, "자동 해제, 지속 약 1분") |
