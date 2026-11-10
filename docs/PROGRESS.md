@@ -468,6 +468,31 @@ MCP 검증 (`execute_code` `MetricsApi.queryScalarData`, `aggregate_rum_events`)
 
 알아 둘 점: 상장 장애 때 리소스 그래프에 변화를 보여 주려면 traffic-gen `listing_spike` 모드를 같이 켜야 합니다. 그러면 주문이 늘어 DB 풀 경고가 나고, 판정 문구가 "자원은 여유, 원인은 DB 커넥션 풀"로 바뀝니다. 호스트 CPU에는 같은 EC2의 traffic-gen(headless Chrome)도 들어갑니다.
 
+### 발표 후 AWS 정리 (2026-11-10 15:20 KST)
+
+사용자 요청: 발표가 끝났으니 이번 데모에서 만든 AWS 리소스만 정리. 삭제 대상 목록과 destroy plan을 보여 드리고 승인받은 뒤 실행했습니다.
+
+- `terraform destroy`: plan은 추가 0, 변경 0, 삭제 13이었고 13개 모두 삭제됐습니다.
+  - EC2 `i-03821f4129b934d82`, EIP 43.202.19.36
+  - VPC, 서브넷, IGW, 라우트 테이블과 그 연결
+  - 보안 그룹 `bitsburg-demo-web`
+  - IAM 역할·인스턴스 프로파일 `bitsburg-demo-ec2`와 정책 연결
+  - S3 `bitsburg-demo-artifacts-557652101750`과 퍼블릭 액세스 차단 설정
+- SSM 파라미터 `/bitsburg-demo/*` 6개와 Budget `bitsburg-demo-monthly-50usd`를 삭제했습니다.
+- 남긴 것
+  - 기존 Budget `[Hyunjin] Ugent AWS Billing Check`
+  - Datadog 리소스 전부. Pulse 전용 App 키 `bitsburg-pulse-ec2`도 사용자 선택에 따라 남겼습니다. 폐기하려면 `infra/pulse-key.sh revoke`를 실행합니다. SSM 파라미터는 이미 없으므로 키만 지워집니다.
+- `teardown.sh`는 App 키 폐기까지 같이 하므로 쓰지 않고, 같은 단계를 나눠 실행했습니다.
+
+| 확인 항목 | 결과 |
+| --- | --- |
+| Terraform state | 0개 |
+| EC2 `i-03821f4129b934d82` | terminated, 루트 볼륨 없음 |
+| `Purpose=coinone-abm-demo` EIP·VPC | 0개 |
+| S3 버킷 | 404 (없음) |
+| SSM `/bitsburg-demo/*` | 0개 |
+| Budget | `[Hyunjin] Ugent AWS Billing Check`만 남음 |
+
 ## 최종 요약 (2026-11-09 21:05 KST)
 
 0~7단계와 9단계를 마쳤습니다. 8단계(데이터 점검)는 요청대로 하지 않았고 아래 "다음 날 확인할 것"에 넣었습니다.
