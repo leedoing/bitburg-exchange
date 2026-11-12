@@ -493,6 +493,28 @@ MCP 검증 (`execute_code` `MetricsApi.queryScalarData`, `aggregate_rum_events`)
 | SSM `/bitsburg-demo/*` | 0개 |
 | Budget | `[Hyunjin] Ugent AWS Billing Check`만 남음 |
 
+### 데모 재가동 (2026-11-12 09:25 KST)
+
+사용자 요청: 정리했던 데모를 이전과 같은 구성으로 다시 살리고, 하루 비용 알려 주기.
+
+- 진행 순서
+  1. `infra/ssm-push.sh`로 비밀값 5개를 SSM에 다시 올렸습니다.
+  2. `infra/pulse-key.sh`로 Pulse App 키를 새로 발급했습니다. 기존 키 2f490f5d…는 폐기했습니다.
+  3. 아티팩트 버킷을 먼저 만들었습니다(`-target`, 2개 추가).
+  4. `infra/deploy.sh --url-only`로 커밋 074884c를 업로드했습니다.
+  5. `terraform apply`를 실행했습니다. plan은 추가 11, 변경 0, 삭제 0이고 구성은 이전과 같습니다(보안 그룹 80·8080).
+- 새 주소: 웹 **http://43.203.69.109**, Pulse **http://43.203.69.109:8080**, 인스턴스 `i-039f3e253f976c8bf`. EIP를 반납했었기 때문에 IP가 바뀌었습니다.
+- 첫 부팅부터 서비스 응답까지 약 5분 걸렸습니다. 웹은 09:23, Pulse는 09:24에 200을 돌려줬습니다.
+- Budget `bitsburg-demo-monthly-50usd`는 다시 만들지 않았습니다.
+
+| 확인 항목 | 결과 |
+| --- | --- |
+| 컨테이너 | 14개 Up (서비스 12개 healthy, pulse, traffic-gen), `bitsburg-traffic.service` active |
+| Pulse 탭 6개 (1시간) | 오류 없음 |
+| RUM (MCP, 최근 6분) | 세션 12개, action 220, view 42, operation 23 |
+| 메트릭·APM (MCP, host:bitsburg-demo) | CPU 부팅 직후 78% → 20% 안팎, `bitsburg.order.filled` 수집, `trace.express.request.hits` 분당 36~114 |
+| 호스트 메모리 | available 1.4GB / 3.8GB |
+
 ## 최종 요약 (2026-11-09 21:05 KST)
 
 0~7단계와 9단계를 마쳤습니다. 8단계(데이터 점검)는 요청대로 하지 않았고 아래 "다음 날 확인할 것"에 넣었습니다.
