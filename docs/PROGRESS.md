@@ -515,6 +515,26 @@ MCP 검증 (`execute_code` `MetricsApi.queryScalarData`, `aggregate_rum_events`)
 | 메트릭·APM (MCP, host:bitsburg-demo) | CPU 부팅 직후 78% → 20% 안팎, `bitsburg.order.filled` 수집, `trace.express.request.hits` 분당 36~114 |
 | 호스트 메모리 | available 1.4GB / 3.8GB |
 
+### 재가동 후 Datadog App 점검 (2026-11-12 15:10 KST)
+
+사용자 요청: Datadog Apps 쪽이 제대로 빌드돼 있지 않은 것 같으니 확인.
+
+- 게시 상태는 정상이었습니다. 버전 7이 11/10 03:05 KST에 배포됐고, `updated_since_deployment`는 false였습니다. 마지막 코드가 그대로 게시돼 있었습니다.
+- 실제 문제는 시나리오 컨트롤 탭이었습니다. admin API 주소가 지운 EC2의 IP(43.202.19.36)로 남아 있어서 상태 조회가 503으로 실패했습니다.
+  - 그 주소는 두 곳에 있었습니다: 코드 `ADMIN_BASE_URL`과 HTTP Connection `bitsburg-admin-api`의 base URL.
+  - 다른 탭은 Datadog API만 읽으므로 영향이 없었습니다.
+- 수정
+  - `ADMIN_BASE_URL`을 `http://43.203.69.109`로 바꿨습니다.
+  - Connection base URL도 같은 주소로 바꿨습니다. `base_url`만 PATCH하면 200이 오지만 값이 바뀌지 않아서, credentials(헤더 `X-Admin-Token: {{ adminToken }}`, 토큰 `adminToken`)를 함께 보냈습니다. 토큰 값은 `.env`에서 바로 넣고 출력하지 않았습니다.
+  - EC2 재배포 후 앱을 다시 게시했습니다(버전 8, `150a17b315efa466`).
+- README의 AWS 배포 절에 "재생성으로 IP가 바뀌면 할 일"을 적었습니다.
+
+| 확인 항목 | 결과 |
+| --- | --- |
+| Connection `bitsburg-admin-api` | base URL `http://43.203.69.109`, 헤더 `X-Admin-Token`, 토큰 `adminToken` 유지 |
+| 시나리오 컨트롤 탭 (EC2 Pulse) | 장애 스위치 3개 상태 표시, 오류 없음 |
+| Datadog App | 버전 8, 06:06 UTC 배포, `updated_since_deployment` false |
+
 ## 최종 요약 (2026-11-09 21:05 KST)
 
 0~7단계와 9단계를 마쳤습니다. 8단계(데이터 점검)는 요청대로 하지 않았고 아래 "다음 날 확인할 것"에 넣었습니다.

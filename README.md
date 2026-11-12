@@ -110,6 +110,8 @@ infra/deploy.sh                          # 이후 재배포 (SSM Run Command)
 infra/datadog/tf.sh apply                # Datadog 모니터·SLO·대시보드·SDS
 ```
 
+인프라를 지웠다가 다시 만들면 EIP가 바뀝니다. 그때는 시나리오 컨트롤이 쓰는 admin API 주소 두 곳을 새 IP로 맞춥니다. 하나는 `apps/bitsburg-pulse/src/server/config.ts`의 `ADMIN_BASE_URL`, 다른 하나는 Datadog HTTP Connection `bitsburg-admin-api`의 base URL입니다. 맞춘 뒤 `infra/deploy.sh`와 `npm run upload`를 다시 실행합니다. API로 Connection을 고칠 때는 credentials(헤더 `X-Admin-Token`, 토큰 `adminToken`)를 함께 보내야 base URL이 반영됩니다.
+
 EC2에서는 `bitsburg-traffic.service`가 baseline 트래픽을 상시로 돌립니다. 예상 비용은 월 약 44달러이고, 월 50달러 AWS Budget 알림이 걸려 있습니다.
 
 ## 정리
