@@ -535,6 +535,23 @@ MCP 검증 (`execute_code` `MetricsApi.queryScalarData`, `aggregate_rum_events`)
 | 시나리오 컨트롤 탭 (EC2 Pulse) | 장애 스위치 3개 상태 표시, 오류 없음 |
 | Datadog App | 버전 8, 06:06 UTC 배포, `updated_since_deployment` false |
 
+### 두 번째 AWS 정리 (2026-11-13 09:45 KST)
+
+사용자 요청: 재가동했던 데모를 다시 내리기. 삭제 대상과 destroy plan을 보여 드리고 승인받은 뒤 실행했습니다.
+
+- `terraform destroy`: plan은 추가 0, 변경 0, 삭제 13이었고 13개 모두 삭제됐습니다. EC2 `i-039f3e253f976c8bf`, EIP 43.203.69.109, VPC와 네트워크, 보안 그룹, IAM 역할·프로파일, S3 버킷이 포함됩니다.
+- SSM 파라미터 `/bitsburg-demo/*` 6개를 삭제했습니다.
+- 남긴 것: Datadog 리소스 전부(Pulse App 키 `bitsburg-pulse-ec2`, Connection `bitsburg-admin-api` 포함)와 기존 Budget `[Hyunjin] Ugent AWS Billing Check`.
+- 다시 살릴 때는 "데모 재가동 (2026-11-12)"과 같은 순서로 하고, README에 적은 대로 admin API 주소 두 곳을 새 IP로 맞춥니다.
+
+| 확인 항목 | 결과 |
+| --- | --- |
+| Terraform state | 0개 |
+| EC2 `i-039f3e253f976c8bf` | terminated |
+| `Purpose=coinone-abm-demo` EIP·VPC·볼륨 | 0개 |
+| S3 버킷 | 404 (없음) |
+| SSM `/bitsburg-demo/*` | 0개 |
+
 ## 최종 요약 (2026-11-09 21:05 KST)
 
 0~7단계와 9단계를 마쳤습니다. 8단계(데이터 점검)는 요청대로 하지 않았고 아래 "다음 날 확인할 것"에 넣었습니다.
